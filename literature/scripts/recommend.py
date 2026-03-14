@@ -46,8 +46,8 @@ def recommend(
         relevance = 0.0
         if purpose_keywords:
             text = f"{p['title']} {p['abstract']} {p['tags']}".lower()
-            hits = sum(1 for kw in purpose_keywords if kw.lower() in text)
-            relevance = hits / max(len(purpose_keywords), 1)
+            hits = sum(1 for kw in purpose_keywords if kw in text)
+            relevance = min(hits / max(len(purpose_keywords), 1), 1.0)
 
         if purpose_keywords:
             score = 0.40 * relevance + 0.30 * pr + 0.30 * recency

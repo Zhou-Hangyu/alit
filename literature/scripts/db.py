@@ -11,6 +11,7 @@ import urllib.request
 from pathlib import Path
 
 DB_NAME = "papers.db"
+SCHEMA_VERSION = 2
 
 
 def get_db(path: Path | None = None) -> sqlite3.Connection:
@@ -69,35 +70,6 @@ def init_db(path: Path | None = None) -> sqlite3.Connection:
             value TEXT
         );
 
-        CREATE VIRTUAL TABLE IF NOT EXISTS papers_fts USING fts5(
-            id UNINDEXED,
-            title,
-            abstract,
-            notes,
-            summary_l4,
-            summary_l2,
-            tags,
-            content='papers',
-            content_rowid='rowid',
-            tokenize='unicode61'
-        );
-
-        CREATE TRIGGER IF NOT EXISTS papers_ai AFTER INSERT ON papers BEGIN
-            INSERT INTO papers_fts(rowid, id, title, abstract, notes, summary_l4, summary_l2, tags)
-            VALUES (new.rowid, new.id, new.title, new.abstract, new.notes, new.summary_l4, new.summary_l2, new.tags);
-        END;
-
-        CREATE TRIGGER IF NOT EXISTS papers_ad AFTER DELETE ON papers BEGIN
-            INSERT INTO papers_fts(papers_fts, rowid, id, title, abstract, notes, summary_l4, summary_l2, tags)
-            VALUES ('delete', old.rowid, old.id, old.title, old.abstract, old.notes, old.summary_l4, old.summary_l2, old.tags);
-        END;
-
-        CREATE TRIGGER IF NOT EXISTS papers_au AFTER UPDATE ON papers BEGIN
-            INSERT INTO papers_fts(papers_fts, rowid, id, title, abstract, notes, summary_l4, summary_l2, tags)
-            VALUES ('delete', old.rowid, old.id, old.title, old.abstract, old.notes, old.summary_l4, old.summary_l2, old.tags);
-            INSERT INTO papers_fts(rowid, id, title, abstract, notes, summary_l4, summary_l2, tags)
-            VALUES (new.rowid, new.id, new.title, new.abstract, new.notes, new.summary_l4, new.summary_l2, new.tags);
-        END;
     """)
     conn.commit()
     _migrate_schema(conn)
@@ -105,9 +77,15 @@ def init_db(path: Path | None = None) -> sqlite3.Connection:
 
 
 def _migrate_schema(conn: sqlite3.Connection) -> None:
-    """Add columns that may be missing in older databases."""
+    """Version-aware schema migration. Handles column additions and FTS5 trigger rebuilds."""
+    cur_version_row = conn.execute("SELECT value FROM meta WHERE key='_schema_version'").fetchone()
+    cur_version = int(cur_version_row["value"]) if cur_version_row else 0
+
+    if cur_version >= SCHEMA_VERSION:
+        return
+
     existing = {r[1] for r in conn.execute("PRAGMA table_info(papers)").fetchall()}
-    migrations = [
+    new_columns = [
         ("pdf_path", "TEXT DEFAULT ''"),
         ("pagerank", "REAL DEFAULT 0.0"),
         ("summary_l4", "TEXT DEFAULT ''"),
@@ -117,10 +95,52 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
         ("summary_l2_model", "TEXT DEFAULT ''"),
         ("summary_l2_at", "TEXT DEFAULT ''"),
     ]
-    for col, typedef in migrations:
+    for col, typedef in new_columns:
         if col not in existing:
             conn.execute(f"ALTER TABLE papers ADD COLUMN {col} {typedef}")
+
+    _rebuild_fts_triggers(conn)
+
+    conn.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES ('_schema_version', ?)",
+        (str(SCHEMA_VERSION),),
+    )
     conn.commit()
+
+
+def _rebuild_fts_triggers(conn: sqlite3.Connection) -> None:
+    """Drop and recreate FTS5 triggers + virtual table to match current schema."""
+    conn.executescript("""
+        DROP TRIGGER IF EXISTS papers_ai;
+        DROP TRIGGER IF EXISTS papers_ad;
+        DROP TRIGGER IF EXISTS papers_au;
+        DROP TABLE IF EXISTS papers_fts;
+    """)
+    conn.execute("""CREATE VIRTUAL TABLE IF NOT EXISTS papers_fts USING fts5(
+        id UNINDEXED, title, abstract, notes, summary_l4, summary_l2, tags,
+        content='papers', content_rowid='rowid',
+        tokenize="unicode61 tokenchars '-_'"
+    )""")
+    conn.executescript("""
+        CREATE TRIGGER papers_ai AFTER INSERT ON papers BEGIN
+            INSERT INTO papers_fts(rowid, id, title, abstract, notes, summary_l4, summary_l2, tags)
+            VALUES (new.rowid, new.id, new.title, new.abstract, new.notes, new.summary_l4, new.summary_l2, new.tags);
+        END;
+
+        CREATE TRIGGER papers_ad AFTER DELETE ON papers BEGIN
+            INSERT INTO papers_fts(papers_fts, rowid, id, title, abstract, notes, summary_l4, summary_l2, tags)
+            VALUES ('delete', old.rowid, old.id, old.title, old.abstract, old.notes, old.summary_l4, old.summary_l2, old.tags);
+        END;
+
+        CREATE TRIGGER papers_au AFTER UPDATE ON papers BEGIN
+            INSERT INTO papers_fts(papers_fts, rowid, id, title, abstract, notes, summary_l4, summary_l2, tags)
+            VALUES ('delete', old.rowid, old.id, old.title, old.abstract, old.notes, old.summary_l4, old.summary_l2, old.tags);
+            INSERT INTO papers_fts(rowid, id, title, abstract, notes, summary_l4, summary_l2, tags)
+            VALUES (new.rowid, new.id, new.title, new.abstract, new.notes, new.summary_l4, new.summary_l2, new.tags);
+        END;
+
+        INSERT INTO papers_fts(papers_fts) VALUES('rebuild');
+    """)
 
 
 def _clean_arxiv_id(raw: str) -> str:

@@ -71,6 +71,36 @@ def _is_arxiv_url(text: str) -> str | None:
     return m.group(1) if m else None
 
 
+_STOPWORDS = frozenset(
+    "a an the of in on at to for with and or but is are was were be been "
+    "have has had do does did will would can could should may might this that "
+    "these those we you it its they their what how when where which who from as "
+    "by not no more also than into about use using used".split()
+)
+
+
+def _extract_purpose_keywords(text: str) -> list[str]:
+    import re
+    text = re.sub(r"#+\s+.*", "", text)
+    text = re.sub(r"[*_`\[\]()>]", " ", text)
+    text = re.sub(r"\bhttps?://\S+", "", text)
+    text = re.sub(r"^[-\d.]+\s+", "", text, flags=re.MULTILINE)
+
+    phrases = []
+    for line in text.split("\n"):
+        line = line.strip().strip("-").strip()
+        if not line or len(line) < 5:
+            continue
+        words = [w.strip(".,;:()[]\"'") for w in line.lower().split()]
+        meaningful = [w for w in words if w and w not in _STOPWORDS and len(w) > 2]
+        if len(meaningful) >= 2:
+            phrases.append(" ".join(meaningful[:5]))
+        elif meaningful:
+            phrases.append(meaningful[0])
+
+    return phrases[:40]
+
+
 def _cmd_add(args: argparse.Namespace, conn) -> int:
     title = args.title
 
@@ -307,8 +337,7 @@ def _cmd_recommend(args: argparse.Namespace, conn) -> int:
     purpose_row = conn.execute("SELECT value FROM meta WHERE key='purpose'").fetchone()
     purpose_keywords: list[str] | None = None
     if purpose_row and purpose_row["value"]:
-        words = [w.strip(".,;:()[]\"'") for w in purpose_row["value"].split()]
-        purpose_keywords = [w for w in words if len(w) > 3][:30]
+        purpose_keywords = _extract_purpose_keywords(purpose_row["value"])
 
     raw = getattr(args, "n", None)
     try:
@@ -330,7 +359,11 @@ def _cmd_recommend(args: argparse.Namespace, conn) -> int:
         "SELECT COUNT(*) FROM papers WHERE status NOT IN ('read', 'synthesized')"
     ).fetchone()[0]
 
-    print(f"Reading Queue — {len(results)} of {total_unread} unread papers ranked\n")
+    has_purpose = bool(purpose_keywords)
+    if has_purpose:
+        print(f"Reading Queue — {len(results)} of {total_unread} unread | scoring: 40% relevance + 30% pagerank + 30% recency\n")
+    else:
+        print(f"Reading Queue — {len(results)} of {total_unread} unread | scoring: 50% pagerank + 50% recency (set purpose for relevance)\n")
 
     for batch_idx in range(0, len(results), batch_size):
         batch = results[batch_idx:batch_idx + batch_size]
