@@ -132,9 +132,9 @@ def _cmd_add(args: argparse.Namespace, conn) -> int:
         if "url" not in kwargs:
             kwargs["url"] = f"https://arxiv.org/abs/{arxiv}"
 
-    do_enrich = getattr(args, "enrich", False)
+    no_enrich = getattr(args, "no_enrich", False)
 
-    if do_enrich and arxiv and not kwargs.get("abstract"):
+    if not no_enrich and arxiv and not kwargs.get("abstract"):
         from alit.scripts.db import _enrich_one_arxiv, _enrich_one_s2
         enriched = _enrich_one_arxiv(arxiv) or _enrich_one_s2(arxiv)
         if enriched:
@@ -162,7 +162,7 @@ def _cmd_add(args: argparse.Namespace, conn) -> int:
             paper = get_paper(conn, paper_id)
         else:
             print(f"Warning: PDF not found at {src}", file=sys.stderr)
-    elif do_enrich and not no_pdf:
+    elif not no_enrich and not no_pdf:
         pdf = fetch_pdf_for_paper(conn, paper_id, db_path)
         if pdf:
             paper = get_paper(conn, paper_id)
@@ -170,11 +170,8 @@ def _cmd_add(args: argparse.Namespace, conn) -> int:
     if getattr(args, "json", False):
         print(json.dumps(paper, ensure_ascii=False))
     else:
-        if do_enrich:
-            pdf_msg = f" | pdf: {paper.get('pdf_path')}" if paper and paper.get("pdf_path") else ""
-            print(f"(-o+) Added: {paper_id}{pdf_msg}")
-        else:
-            print(f"(-o+) Added: {paper_id} (run alit enrich to fetch metadata)")
+        pdf_msg = f" | pdf: {paper.get('pdf_path')}" if paper and paper.get("pdf_path") else ""
+        print(f"(-o+) Added: {paper_id}{pdf_msg}")
     return 0
 
 
@@ -1169,7 +1166,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tags", default=None)
     p.add_argument("--pdf", default=None, help="Path to local PDF file")
     p.add_argument("--no-pdf", action="store_true", help="Skip PDF download")
-    p.add_argument("--enrich", action="store_true", help="Fetch metadata + PDF immediately (default: just store URL)")
+    p.add_argument("--no-enrich", action="store_true", help="Skip metadata fetch (just store URL + arxiv_id)")
 
     # show
     p = sub.add_parser("show", help="Show paper details")
