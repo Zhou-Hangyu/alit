@@ -102,6 +102,84 @@ def init_db(path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+def _clean_arxiv_id(raw: str) -> str:
+    return re.sub(r"^(https?://)?arxiv\.org/(abs|pdf)/", "", raw).rstrip(".pdf").strip("/")
+
+
+def enrich_from_arxiv(conn: sqlite3.Connection, db_path: Path, *, fetch_pdfs: bool = True) -> dict:
+    """Batch-fetch metadata from arXiv API for papers with arxiv_id but missing abstracts."""
+    import time
+    import xml.etree.ElementTree as ET
+
+    papers = conn.execute(
+        "SELECT id, arxiv_id FROM papers WHERE arxiv_id != '' AND (abstract = '' OR abstract IS NULL)"
+    ).fetchall()
+    if not papers:
+        return {"enriched": 0, "total": 0, "errors": []}
+
+    arxiv_map = {r["arxiv_id"]: r["id"] for r in papers}
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    enriched = 0
+    errors = []
+
+    for i, (arxiv_id, paper_id) in enumerate(arxiv_map.items()):
+        clean_id = _clean_arxiv_id(arxiv_id)
+        url = f"https://export.arxiv.org/api/query?id_list={clean_id}&max_results=1"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "alit/0.2"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                xml_data = resp.read().decode("utf-8")
+
+            root = ET.fromstring(xml_data)
+            entry = root.find("atom:entry", ns)
+            if entry is None:
+                errors.append(f"{arxiv_id}: no entry in response")
+                time.sleep(3)
+                continue
+
+            title_el = entry.find("atom:title", ns)
+            title = " ".join(title_el.text.strip().split()) if title_el is not None and title_el.text else ""
+            if "Error" in title:
+                errors.append(f"{arxiv_id}: {title}")
+                time.sleep(3)
+                continue
+
+            summary_el = entry.find("atom:summary", ns)
+            abstract = " ".join(summary_el.text.strip().split()) if summary_el is not None and summary_el.text else ""
+
+            pub_el = entry.find("atom:published", ns)
+            year = int(pub_el.text[:4]) if pub_el is not None and pub_el.text else None
+
+            authors = [
+                a.find("atom:name", ns).text
+                for a in entry.findall("atom:author", ns)
+                if a.find("atom:name", ns) is not None and a.find("atom:name", ns).text
+            ]
+
+            entry_url_el = entry.find("atom:id", ns)
+            entry_url = entry_url_el.text if entry_url_el is not None else ""
+
+            kwargs: dict = {"authors": ", ".join(authors), "abstract": abstract, "url": entry_url}
+            if title:
+                kwargs["title"] = title
+            if year:
+                kwargs["year"] = year
+
+            update_paper(conn, paper_id, **kwargs)
+
+            if fetch_pdfs:
+                fetch_pdf_for_paper(conn, paper_id, db_path)
+
+            enriched += 1
+            print(f"  [{i + 1}/{len(arxiv_map)}] {paper_id} ({year or '?'})", flush=True)
+        except Exception as e:
+            errors.append(f"{arxiv_id} ({paper_id}): {e}")
+
+        time.sleep(3)
+
+    return {"enriched": enriched, "total": len(arxiv_map), "errors": errors}
+
+
 def _arxiv_pdf_url(arxiv_id: str) -> str:
     """Convert arXiv ID to PDF download URL."""
     clean = re.sub(r"^(https?://)?arxiv\.org/(abs|pdf)/", "", arxiv_id)

@@ -54,7 +54,8 @@ def recommend(
         else:
             score = 0.50 * pr + 0.50 * recency
 
-        scored.append({**dict(p), "score": score})
+        breakdown = {"relevance": relevance, "pagerank": pr, "recency": recency}
+        scored.append({**dict(p), "score": score, "breakdown": breakdown})
 
     scored.sort(key=lambda x: x["score"], reverse=True)
     return scored[:top_k]

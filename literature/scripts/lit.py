@@ -20,7 +20,8 @@ import sys
 from pathlib import Path
 
 from literature.scripts.db import DB_NAME, add_citation, add_paper, attach_pdf
-from literature.scripts.db import delete_paper, fetch_pdf_for_paper, get_db
+from literature.scripts.db import delete_paper, enrich_from_arxiv
+from literature.scripts.db import fetch_pdf_for_paper, get_db
 from literature.scripts.db import get_orphan_citations, get_paper, get_stats
 from literature.scripts.db import init_db, list_papers, update_paper
 
@@ -241,29 +242,57 @@ def _cmd_tag(args: argparse.Namespace, conn) -> int:
 
 def _cmd_recommend(args: argparse.Namespace, conn) -> int:
     from literature.scripts.recommend import recommend
+    from literature.scripts.pagerank import update_pagerank
 
-    # Read purpose keywords if set
+    update_pagerank(conn)
+
     purpose_row = conn.execute("SELECT value FROM meta WHERE key='purpose'").fetchone()
     purpose_keywords: list[str] | None = None
     if purpose_row and purpose_row["value"]:
-        text = purpose_row["value"]
-        # Extract simple keywords: split on whitespace, remove short words
-        words = [w.strip(".,;:()[]\"'") for w in text.split()]
-        purpose_keywords = [w for w in words if len(w) > 4][:30]
+        words = [w.strip(".,;:()[]\"'") for w in purpose_row["value"].split()]
+        purpose_keywords = [w for w in words if len(w) > 3][:30]
 
     raw = getattr(args, "n", None)
     top_k = int(raw) if raw else 10
+    batch_size = getattr(args, "batch", 5) or 5
 
     results = recommend(conn, top_k=top_k, purpose_keywords=purpose_keywords)
     if getattr(args, "json", False):
         print(json.dumps(results, ensure_ascii=False))
-    else:
-        if not results:
-            print("No recommendations. All papers read or corpus empty.")
-            return 0
-        for r in results:
+        return 0
+
+    if not results:
+        print("No recommendations. All papers read or corpus empty.")
+        return 0
+
+    total_unread = conn.execute(
+        "SELECT COUNT(*) FROM papers WHERE status NOT IN ('read', 'synthesized')"
+    ).fetchone()[0]
+
+    print(f"Reading Queue — {len(results)} of {total_unread} unread papers ranked\n")
+
+    for batch_idx in range(0, len(results), batch_size):
+        batch = results[batch_idx:batch_idx + batch_size]
+        batch_num = batch_idx // batch_size + 1
+        print(f"── Batch {batch_num} ──")
+        for rank, r in enumerate(batch, start=batch_idx + 1):
             year = r.get("year") or "????"
-            print(f"[{r['score']:.3f}] {r['id']:<40s} ({year})  {(r.get('title') or '')[:50]}")
+            score = r.get("score", 0)
+            bd = r.get("breakdown", {})
+            pdf = "📄" if r.get("pdf_path") else "  "
+            status = (r.get("status") or "unread")[:4]
+            print(f"  {rank:2d}. [{score:.3f}] {pdf} {r['id']:<38s} ({year}) {(r.get('title') or '')[:50]}")
+            parts = []
+            if bd.get("relevance", 0) > 0:
+                parts.append(f"rel={bd['relevance']:.2f}")
+            if bd.get("pagerank", 0) > 0:
+                parts.append(f"pr={bd['pagerank']:.2f}")
+            if bd.get("recency", 0) > 0:
+                parts.append(f"rec={bd['recency']:.2f}")
+            if parts:
+                print(f"              {' | '.join(parts)}")
+        print()
+
     return 0
 
 
@@ -343,6 +372,18 @@ def _cmd_orphans(args: argparse.Namespace, conn) -> int:
         for o in orphans:
             print(f"  {o['from_id']} --[{o['type']}]--> {o['to_id']}  (MISSING)")
         print(f"\nTo resolve: look up each missing paper and `lit add` it.")
+    return 0
+
+
+def _cmd_enrich(args: argparse.Namespace, conn) -> int:
+    db_path = Path(args._db_path) if hasattr(args, "_db_path") else Path.cwd()
+    no_pdf = getattr(args, "no_pdf", False)
+    result = enrich_from_arxiv(conn, db_path, fetch_pdfs=not no_pdf)
+    print(f"\nEnriched {result['enriched']}/{result['total']} papers from arXiv", flush=True)
+    if result["errors"]:
+        print("Issues:")
+        for e in result["errors"]:
+            print(f"  {e}")
     return 0
 
 
@@ -460,6 +501,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # recommend
     p = sub.add_parser("recommend", help="Reading recommendations")
     p.add_argument("n", nargs="?", default=None, help="Number of results (default: 10)")
+    p.add_argument("--batch", type=int, default=5, help="Papers per batch (default: 5)")
 
     # ask
     p = sub.add_parser("ask", help="Cross-paper synthesis")
@@ -484,6 +526,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("attach", help="Attach a local PDF to a paper")
     p.add_argument("id", help="Paper ID")
     p.add_argument("path", help="Path to PDF file")
+
+    # enrich
+    p = sub.add_parser("enrich", help="Batch-fetch metadata from arXiv for papers missing abstracts")
+    p.add_argument("--no-pdf", action="store_true", help="Skip PDF downloads")
 
     # orphans
     sub.add_parser("orphans", help="List citations pointing to papers not in collection")
@@ -519,6 +565,7 @@ HANDLERS = {
     "fetch-pdf": _cmd_fetch_pdf,
     "attach": _cmd_attach,
     "orphans": _cmd_orphans,
+    "enrich": _cmd_enrich,
 }
 
 
