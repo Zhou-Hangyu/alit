@@ -12,7 +12,7 @@ def funnel_retrieve(
     conn: sqlite3.Connection,
     question: str,
     depth: int = 2,
-    top_k: int = 50,
+    top_k: int = 20,
 ) -> dict:
     """Retrieve papers using multi-stage funnel for cross-paper synthesis.
 

@@ -211,28 +211,40 @@ def _cmd_show(args: argparse.Namespace, conn) -> int:
 def _cmd_list(args: argparse.Namespace, conn) -> int:
     status = getattr(args, "status", None)
     tag = getattr(args, "tag", None)
+    show_all = getattr(args, "all", False)
+    limit = None if show_all else 20
+
     if tag:
+        q = "SELECT * FROM papers WHERE tags LIKE ? "
+        params: list = [f"%{tag}%"]
         if status:
-            papers = [dict(r) for r in conn.execute(
-                "SELECT * FROM papers WHERE status = ? AND tags LIKE ? ORDER BY year DESC",
-                (status, f"%{tag}%")).fetchall()]
-        else:
-            papers = [dict(r) for r in conn.execute(
-                "SELECT * FROM papers WHERE tags LIKE ? ORDER BY year DESC",
-                (f"%{tag}%",)).fetchall()]
+            q += "AND status = ? "
+            params.append(status)
+        q += "ORDER BY year DESC"
+        if limit:
+            q += f" LIMIT {limit}"
+        papers = [dict(r) for r in conn.execute(q, params).fetchall()]
     else:
         papers = list_papers(conn, status=status)
+        if limit and len(papers) > limit:
+            papers = papers[:limit]
+
+    total = conn.execute("SELECT COUNT(*) FROM papers").fetchone()[0]
+
     if getattr(args, "json", False):
         print(json.dumps(papers, ensure_ascii=False))
     else:
         if not papers:
             print("No papers found.")
+            return 0
         for p in papers:
             year = p["year"] or "????"
             st = (p["status"] or "unread")[:8]
             pdf = "📄" if p.get("pdf_path") else "  "
             l4 = "✓" if p.get("summary_l4") else " "
             print(f"[{st:8s}] {pdf}{l4} {p['id']:<38s} ({year})  {(p['title'] or '')[:55]}")
+        if not show_all and len(papers) < total:
+            print(f"\n({len(papers)} of {total} shown. Use --all for full list)")
     return 0
 
 
@@ -361,7 +373,6 @@ def _cmd_recommend(args: argparse.Namespace, conn) -> int:
         top_k = int(raw) if raw else 10
     except (ValueError, TypeError):
         top_k = 10
-    batch_size = getattr(args, "batch", 5) or 5
 
     results = recommend(conn, top_k=top_k, purpose_keywords=purpose_keywords)
     if getattr(args, "json", False):
@@ -372,37 +383,18 @@ def _cmd_recommend(args: argparse.Namespace, conn) -> int:
         print("No recommendations. All papers read or corpus empty.")
         return 0
 
-    total_unread = conn.execute(
-        "SELECT COUNT(*) FROM papers WHERE status NOT IN ('read', 'synthesized')"
-    ).fetchone()[0]
+    verbose = getattr(args, "verbose", False)
 
-    has_purpose = bool(purpose_keywords)
-    if has_purpose:
-        print(f"Reading Queue — {len(results)} of {total_unread} unread | scoring: 40% relevance + 30% pagerank + 30% recency\n")
-    else:
-        print(f"Reading Queue — {len(results)} of {total_unread} unread | scoring: 50% pagerank + 50% recency (set purpose for relevance)\n")
-
-    for batch_idx in range(0, len(results), batch_size):
-        batch = results[batch_idx:batch_idx + batch_size]
-        batch_num = batch_idx // batch_size + 1
-        print(f"── Batch {batch_num} ──")
-        for rank, r in enumerate(batch, start=batch_idx + 1):
-            year = r.get("year") or "????"
-            score = r.get("score", 0)
+    for rank, r in enumerate(results, start=1):
+        year = r.get("year") or "????"
+        score = r.get("score", 0)
+        pdf = "📄" if r.get("pdf_path") else "  "
+        print(f"  {rank:2d}. [{score:.3f}] {pdf} {r['id']:<38s} ({year}) {(r.get('title') or '')[:50]}")
+        if verbose:
             bd = r.get("breakdown", {})
-            pdf = "📄" if r.get("pdf_path") else "  "
-            status = (r.get("status") or "unread")[:4]
-            print(f"  {rank:2d}. [{score:.3f}] {pdf} {r['id']:<38s} ({year}) {(r.get('title') or '')[:50]}")
-            parts = []
-            if bd.get("relevance", 0) > 0:
-                parts.append(f"rel={bd['relevance']:.2f}")
-            if bd.get("pagerank", 0) > 0:
-                parts.append(f"pr={bd['pagerank']:.2f}")
-            if bd.get("recency", 0) > 0:
-                parts.append(f"rec={bd['recency']:.2f}")
+            parts = [f"{k}={v:.2f}" for k, v in bd.items() if v > 0]
             if parts:
                 print(f"              {' | '.join(parts)}")
-        print()
 
     return 0
 
@@ -776,9 +768,9 @@ def _cmd_find(args: argparse.Namespace, conn) -> int:
         else:
             for i, r in enumerate(results, 1):
                 marker = " ✓" if r["in_db"] else ""
-                print(f"  {i:2d}. [{r['year'] or '????'}] {r['title'][:70]}{marker}")
-                print(f"      arxiv:{r['arxiv_id']}  {r['authors']}")
-            print(f"\nTo add: alit add \"https://arxiv.org/abs/<arxiv_id>\"")
+                first_author = r["authors"].split(",")[0].strip() if r["authors"] else ""
+                print(f"  {i:2d}. [{r['year'] or '????'}] {r['title'][:60]} ({first_author}) arxiv:{r['arxiv_id']}{marker}")
+            print(f"\nTo add: alit add \"https://arxiv.org/abs/<id>\"")
     else:
         from literature.scripts.db import _fetch_url
         encoded = _quote(query)
@@ -801,11 +793,10 @@ def _cmd_find(args: argparse.Namespace, conn) -> int:
                 ext = p.get("externalIds") or {}
                 arxiv_id = ext.get("ArXiv", "")
                 year = p.get("year") or "????"
-                title = (p.get("title") or "")[:70]
-                print(f"  {i:2d}. [{year}] {title}")
-                if arxiv_id:
-                    print(f"      arxiv:{arxiv_id}")
-            print(f"\nTo add: alit add \"https://arxiv.org/abs/<arxiv_id>\"")
+                title = (p.get("title") or "")[:60]
+                aid = f" arxiv:{arxiv_id}" if arxiv_id else ""
+                print(f"  {i:2d}. [{year}] {title}{aid}")
+            print(f"\nTo add: alit add \"https://arxiv.org/abs/<id>\"")
     return 0
 
 
@@ -854,11 +845,6 @@ def _cmd_read(args: argparse.Namespace, conn) -> int:
             label = f"{citer['title'][:50]}" if citer else c["from_id"]
             print(f"  ← [{c['type']}] {label}")
 
-    print(f"\n{'─'*70}")
-    print(f"After reading, run:")
-    print(f"  alit status {args.id} read")
-    print(f"  alit note {args.id} \"Your observations...\"")
-    print(f"  alit summarize {args.id} --l4 \"One sentence summary\" --model \"your-model\"")
     return 0
 
 
@@ -957,11 +943,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("list", help="List papers")
     p.add_argument("--status", default=None, help="Filter by status")
     p.add_argument("--tag", default=None, help="Filter by tag")
+    p.add_argument("--all", action="store_true", help="Show all (default: 20)")
 
     # search
     p = sub.add_parser("search", help="BM25 full-text search")
     p.add_argument("query", help="Search query")
-    p.add_argument("--top-k", type=int, default=20, dest="top_k")
+    p.add_argument("--top-k", type=int, default=10, dest="top_k")
 
     # note
     p = sub.add_parser("note", help="Append note to a paper")
@@ -995,7 +982,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # recommend
     p = sub.add_parser("recommend", help="Reading recommendations")
     p.add_argument("n", nargs="?", default=None, help="Number of results (default: 10)")
-    p.add_argument("--batch", type=int, default=5, help="Papers per batch (default: 5)")
+    p.add_argument("--verbose", "-v", action="store_true", help="Show score breakdown")
 
     # ask
     p = sub.add_parser("ask", help="Cross-paper synthesis")
