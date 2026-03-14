@@ -1,10 +1,15 @@
 # (-o-) alit
 
-Your AI agent reads papers so you don't have to.
+Persistent memory for AI agents doing literature review.
 
-`pip install alit` → zero dependencies, SQLite-only, works with any coding agent.
+Your agent can search the web and find papers — but it forgets everything next session. alit is the shared brain that accumulates knowledge across sessions and across agents.
 
-Got tokens to burn? Let your agent read 50 papers overnight and hand you a synthesis in the morning.
+```
+Reading agent  →  reads 50 papers, stores summaries, builds citation graph
+Experiment agent  →  alit ask "what baselines exist?" → instant answer from 50 papers
+```
+
+One agent's work benefits every other agent. Knowledge compounds.
 
 Tell your agent:
 
@@ -12,22 +17,21 @@ Tell your agent:
 Use alit to manage my literature review. See https://github.com/Zhou-Hangyu/alit
 ```
 
+## Why alit (and why not)
+
+**Use alit if:** you're doing a multi-session research project where an agent reads papers over days/weeks and you need that knowledge to persist and be queryable.
+
+**Don't need alit if:** you just want to look up one paper right now — your agent's web search already does that.
+
 ## How it works
 
 ```
-You add papers → alit stores in SQLite → agent reads, summarizes, builds citation graph
-                                       → PDFs auto-downloaded from arXiv
-                                       → PageRank ranks what to read next
-                                       → BM25 search across 10K+ papers in milliseconds
-```
-
-```
 .alit/
-├── papers.db    ← one file, entire literature collection
+├── papers.db    ← one SQLite file, entire knowledge base
 └── pdfs/        ← auto-downloaded from arXiv
 ```
 
-No servers. No API keys. No vector databases. No setup beyond `pip install`.
+No servers. No API keys. No vector databases. Zero dependencies. Pure Python stdlib.
 
 ## Install
 
@@ -39,7 +43,7 @@ alit install-skill       # teaches your agent the full workflow
 
 ## Set your taste
 
-Tell alit what kind of research excites you. This drives recommendations — papers matching your taste rank higher.
+Tell alit what kind of research excites you. Recommendations rank papers matching your taste higher.
 
 ```bash
 alit taste "I'm into multimodal foundation models and how they learn cross-modal
@@ -47,7 +51,7 @@ representations. Love papers with clean ablations over pure benchmark chasing.
 Especially interested in vision-language grounding and embodied AI."
 ```
 
-Change it anytime as your interests evolve. The reading queue reranks instantly.
+Change it anytime. The reading queue reranks instantly.
 
 ## Quick start
 
@@ -60,9 +64,12 @@ alit ask "What are the key attention mechanisms?" --depth 2
 
 ## Update
 
+Not on PyPI yet. If installed from source:
+
 ```bash
-pip install --upgrade alit
-alit install-skill
+cd path/to/alit && git pull
+pip install -e .         # or: uv sync --reinstall-package alit
+alit install-skill       # update the agent skill
 ```
 
 ## Commands
@@ -99,8 +106,8 @@ All commands support `--json`.
 ## Under the hood
 
 - **Search**: BM25 via SQLite FTS5
-- **Ranking**: PageRank on citation graph (pure Python, no scipy)
-- **Recommendations**: PageRank + recency + research purpose matching
+- **Ranking**: PageRank on citation graph (pure Python)
+- **Recommendations**: PageRank + recency + taste matching
 - **Synthesis**: multi-stage funnel retrieval (~5K tokens to query 10K papers)
 - **Enrichment**: arXiv API (batched) with Semantic Scholar fallback
 - **Backward compatible**: schema auto-migrates on upgrade
