@@ -39,7 +39,7 @@ You (or your agent) add papers → alit stores in SQLite → search/recommend/sy
                                                       → BM25 full-text search via FTS5
 ```
 
-**No servers. No API keys. No vector databases.** Just a `papers.db` file and a `papers/` directory for PDFs.
+**No servers. No API keys. No vector databases.** Everything lives in a single `.alit/` directory.
 
 ## Adding Papers
 
@@ -142,14 +142,24 @@ All commands support `--json` for machine-readable output.
 
 ## Architecture
 
+Everything in one hidden directory:
+
 ```
-papers.db (SQLite)
+your-project/
+└── .alit/
+    ├── papers.db        ← SQLite database (sole source of truth)
+    └── pdfs/            ← downloaded PDFs
+        ├── 1706.03762.pdf
+        └── 2502.07071.pdf
+```
+
+Inside `papers.db`:
+
+```
 ├── papers       — metadata, notes, summaries, pdf_path
 ├── papers_fts   — FTS5 index (auto-synced via triggers)
 ├── citations    — typed edges between papers
-└── meta         — key-value store (purpose, etc.)
-
-papers/          — downloaded PDFs
+└── meta         — key-value store (purpose, settings)
 ```
 
 - **Search**: BM25 via SQLite FTS5 — no vector DB
@@ -157,7 +167,7 @@ papers/          — downloaded PDFs
 - **Recommendations**: PageRank + recency + purpose keyword matching
 - **Synthesis**: Multi-stage funnel retrieval (5K tokens for 10K papers)
 - **Enrichment**: arXiv API (batched) with Semantic Scholar fallback
-- **Schema migration**: auto-adds new columns on upgrade
+- **Backward compatible**: schema auto-migrates on upgrade, old layouts auto-detected
 
 ## Development
 

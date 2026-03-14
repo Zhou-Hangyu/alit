@@ -22,50 +22,48 @@ def _resolve_db_path(path: Path | None = None) -> Path:
     if target.exists():
         return target
 
-    for old_dir in (".lit",):
-        old_nested = base / old_dir / LIT_DIR / DB_NAME
-        if old_nested.exists():
-            _migrate_file_layout(base, base / old_dir / LIT_DIR)
+    old_locations = [
+        base / LIT_DIR / LIT_DIR / DB_NAME,
+        base / ".lit" / LIT_DIR / DB_NAME,
+        base / ".lit" / DB_NAME,
+        base / DB_NAME,
+    ]
+    for old_path in old_locations:
+        if old_path.exists():
+            _migrate_file_layout(base, old_path)
             return target
-        old_in_dir = base / old_dir / DB_NAME
-        if old_in_dir.exists():
-            _migrate_file_layout(base, base / old_dir)
-            return target
-
-    old_root = base / DB_NAME
-    if old_root.exists():
-        _migrate_file_layout(base, base)
-        return target
 
     return target
 
 
-def _migrate_file_layout(base: Path, old_base: Path) -> None:
+def _migrate_file_layout(base: Path, old_db_path: Path) -> None:
     import shutil
     target_dir = base / LIT_DIR
     target_dir.mkdir(exist_ok=True)
 
-    old_db = old_base / DB_NAME
-    if old_db.exists():
-        shutil.move(str(old_db), str(target_dir / DB_NAME))
+    if old_db_path.exists() and old_db_path != target_dir / DB_NAME:
+        shutil.move(str(old_db_path), str(target_dir / DB_NAME))
         for ext in ("-wal", "-shm"):
-            f = old_base / (DB_NAME + ext)
-            if f.exists():
-                shutil.move(str(f), str(target_dir / (DB_NAME + ext)))
+            wal = old_db_path.parent / (DB_NAME + ext)
+            if wal.exists():
+                shutil.move(str(wal), str(target_dir / (DB_NAME + ext)))
 
+    old_parent = old_db_path.parent
     for pdfs_name in ("pdfs", "papers"):
-        old_pdfs = old_base / pdfs_name
+        old_pdfs = old_parent / pdfs_name
         if old_pdfs.exists() and any(old_pdfs.glob("*.pdf")):
             new_pdfs = target_dir / "pdfs"
             new_pdfs.mkdir(exist_ok=True)
             for pdf in old_pdfs.glob("*.pdf"):
-                shutil.move(str(pdf), str(new_pdfs / pdf.name))
+                dest = new_pdfs / pdf.name
+                if not dest.exists():
+                    shutil.move(str(pdf), str(dest))
 
-    for old_dir in (old_base, old_base.parent):
-        if old_dir != base and old_dir.exists() and old_dir.name in (".lit", ".alit"):
+    for d in (old_parent, old_parent.parent):
+        if d != base and d != target_dir and d.exists() and d.name in (".lit", ".alit"):
             try:
-                if not any(old_dir.rglob("*")):
-                    old_dir.rmdir()
+                if not any(d.iterdir()):
+                    d.rmdir()
             except OSError:
                 pass
 
