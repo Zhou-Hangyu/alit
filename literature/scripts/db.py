@@ -10,12 +10,68 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+LIT_DIR = ".alit"
 DB_NAME = "papers.db"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+
+
+def _resolve_db_path(path: Path | None = None) -> Path:
+    base = path or Path.cwd()
+    target = base / LIT_DIR / DB_NAME
+
+    if target.exists():
+        return target
+
+    for old_dir in (".lit",):
+        old_nested = base / old_dir / LIT_DIR / DB_NAME
+        if old_nested.exists():
+            _migrate_file_layout(base, base / old_dir / LIT_DIR)
+            return target
+        old_in_dir = base / old_dir / DB_NAME
+        if old_in_dir.exists():
+            _migrate_file_layout(base, base / old_dir)
+            return target
+
+    old_root = base / DB_NAME
+    if old_root.exists():
+        _migrate_file_layout(base, base)
+        return target
+
+    return target
+
+
+def _migrate_file_layout(base: Path, old_base: Path) -> None:
+    import shutil
+    target_dir = base / LIT_DIR
+    target_dir.mkdir(exist_ok=True)
+
+    old_db = old_base / DB_NAME
+    if old_db.exists():
+        shutil.move(str(old_db), str(target_dir / DB_NAME))
+        for ext in ("-wal", "-shm"):
+            f = old_base / (DB_NAME + ext)
+            if f.exists():
+                shutil.move(str(f), str(target_dir / (DB_NAME + ext)))
+
+    for pdfs_name in ("pdfs", "papers"):
+        old_pdfs = old_base / pdfs_name
+        if old_pdfs.exists() and any(old_pdfs.glob("*.pdf")):
+            new_pdfs = target_dir / "pdfs"
+            new_pdfs.mkdir(exist_ok=True)
+            for pdf in old_pdfs.glob("*.pdf"):
+                shutil.move(str(pdf), str(new_pdfs / pdf.name))
+
+    for old_dir in (old_base, old_base.parent):
+        if old_dir != base and old_dir.exists() and old_dir.name in (".lit", ".alit"):
+            try:
+                if not any(old_dir.rglob("*")):
+                    old_dir.rmdir()
+            except OSError:
+                pass
 
 
 def get_db(path: Path | None = None) -> sqlite3.Connection:
-    db_path = (path or Path.cwd()) / DB_NAME
+    db_path = _resolve_db_path(path)
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -26,8 +82,9 @@ def get_db(path: Path | None = None) -> sqlite3.Connection:
 
 
 def init_db(path: Path | None = None) -> sqlite3.Connection:
-    """Create papers.db and all tables if they don't exist. Idempotent."""
-    db_path = (path or Path.cwd()) / DB_NAME
+    base = path or Path.cwd()
+    db_path = _resolve_db_path(base)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -384,30 +441,28 @@ def fetch_pdf_for_paper(
 
     # Already have a PDF?
     existing = paper.get("pdf_path") or ""
-    if existing and (db_path / existing).exists():
+    if existing and (db_path / LIT_DIR / existing).exists():
         return existing
 
-    papers_dir = db_path / "papers"
-    papers_dir.mkdir(exist_ok=True)
+    pdfs_dir = db_path / LIT_DIR / "pdfs"
+    pdfs_dir.mkdir(parents=True, exist_ok=True)
 
-    # Try arXiv
     arxiv_id = paper.get("arxiv_id") or ""
     if arxiv_id:
         pdf_url = _arxiv_pdf_url(arxiv_id)
         filename = re.sub(r"[^a-zA-Z0-9._-]", "_", arxiv_id) + ".pdf"
-        dest = papers_dir / filename
+        dest = pdfs_dir / filename
         if download_pdf(pdf_url, dest):
-            rel = f"papers/{filename}"
+            rel = f"pdfs/{filename}"
             update_paper(conn, paper_id, pdf_path=rel)
             return rel
 
-    # Try direct URL if it looks like a PDF
     url = paper.get("url") or ""
     if url and url.lower().endswith(".pdf"):
         filename = paper_id + ".pdf"
-        dest = papers_dir / filename
+        dest = pdfs_dir / filename
         if download_pdf(url, dest):
-            rel = f"papers/{filename}"
+            rel = f"pdfs/{filename}"
             update_paper(conn, paper_id, pdf_path=rel)
             return rel
 
@@ -499,14 +554,14 @@ def get_citations(conn: sqlite3.Connection, id: str) -> dict:
 
 
 def attach_pdf(conn: sqlite3.Connection, paper_id: str, src: Path, db_path: Path) -> str:
-    """Copy a local PDF into papers/ and set pdf_path. Returns the relative path."""
+    """Copy a local PDF into .alit/pdfs/ and set pdf_path. Returns the relative path."""
     import shutil
-    papers_dir = db_path / "papers"
-    papers_dir.mkdir(exist_ok=True)
+    pdfs_dir = db_path / LIT_DIR / "pdfs"
+    pdfs_dir.mkdir(parents=True, exist_ok=True)
     filename = paper_id + ".pdf"
-    dest = papers_dir / filename
+    dest = pdfs_dir / filename
     shutil.copy2(str(src), str(dest))
-    rel = f"papers/{filename}"
+    rel = f"pdfs/{filename}"
     update_paper(conn, paper_id, pdf_path=rel)
     return rel
 

@@ -48,15 +48,16 @@ def _auto_id(title: str, conn=None) -> str:
 
 
 def _cmd_init(args: argparse.Namespace) -> int:
+    from literature.scripts.db import LIT_DIR
     target = Path(getattr(args, "path", None) or ".")
     target.mkdir(parents=True, exist_ok=True)
-    db_path = target / DB_NAME
+    db_path = target / LIT_DIR / DB_NAME
     if db_path.exists():
-        print(f"papers.db already exists at {db_path}")
+        print(f"Already initialized at {target / LIT_DIR}")
         return 0
     conn = init_db(target)
     conn.close()
-    print(f"Initialized papers.db at {db_path}")
+    print(f"Initialized {target / LIT_DIR}/")
     print()
     print("Next steps:")
     print('  alit add "Paper Title" --year 2024 --abstract "..."')
@@ -759,9 +760,12 @@ def run(argv: list[str] | None = None, *, root: str | Path | None = None) -> int
         return 0
 
     # All other commands need papers.db
+    from literature.scripts.db import LIT_DIR
     db_path = Path(root) if root else Path.cwd()
-    if not (db_path / DB_NAME).exists():
-        print("No papers.db found. Run 'alit init' first.", file=sys.stderr)
+    new_db = db_path / LIT_DIR / DB_NAME
+    old_db = db_path / DB_NAME
+    if not new_db.exists() and not old_db.exists():
+        print("Not initialized. Run 'alit init' first.", file=sys.stderr)
         return 1
 
     conn = get_db(db_path)

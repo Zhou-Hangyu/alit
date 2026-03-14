@@ -32,7 +32,7 @@ def db(tmp_path):
 def test_init_creates_db(tmp_path):
     conn = init_db(tmp_path)
     conn.close()
-    assert (tmp_path / "papers.db").exists()
+    assert (tmp_path / ".alit" / "papers.db").exists()
 
 
 def test_add_paper(db):
@@ -324,7 +324,7 @@ def test_cli_init(tmp_path):
     target = tmp_path / "myproject"
     code = run(["init", "--path", str(target)])
     assert code == 0
-    assert (target / "papers.db").exists()
+    assert (target / ".alit" / "papers.db").exists()
 
 
 def test_upsert_preserves_existing_data(db):
