@@ -8,10 +8,43 @@ Same spirit as [autoresearch](https://github.com/karpathy/autoresearch) — but 
 
 Why not just web search? Your agent forgets everything next session. alit is persistent memory — one agent reads 50 papers, another queries that knowledge instantly. Knowledge compounds across sessions.
 
-Tell your agent to set alit up:
+## Setup
+
+```bash
+pip install agent-lit    # or: uv add agent-lit
+```
+
+## Running the agent
+
+Spin up Claude Code, opencode, Cursor, or whatever you use in your project, then prompt:
 
 ```
-Use alit to manage my literature review. See https://github.com/Zhou-Hangyu/alit
+Set up alit for literature review in this project. See https://github.com/Zhou-Hangyu/alit
+```
+
+The agent will run `alit init`, set your taste, and start adding papers. From there you can prompt things like:
+
+```
+Find and add the top 10 papers on vision-language grounding from the last 2 years.
+```
+
+```
+Read the next 5 recommended papers and summarize each one.
+```
+
+```
+What does the literature say about cross-modal attention mechanisms?
+```
+
+```
+Import my Zotero library from library.bib and enrich everything.
+```
+
+The `alit taste` is your research program — update it as your interests evolve:
+
+```
+Update my research taste: I'm now more interested in embodied AI
+and less in pure vision-language benchmarks.
 ```
 
 ## How it works
@@ -28,35 +61,13 @@ Three things that matter:
 └── pdfs/        ← auto-downloaded from arXiv
 ```
 
-No servers. No API keys. No vector databases.
-
-## Quick start
-
-```bash
-pip install agent-lit
-alit init
-alit taste "I'm into multimodal foundation models and how they learn cross-modal
-representations. Love papers with clean ablations over pure benchmark chasing."
-```
-
-Then tell your agent to go:
-
-```bash
-alit add "https://arxiv.org/abs/1706.03762"     # fetches metadata + PDF
-alit import library.bib                          # or dump your Zotero/Mendeley
-alit recommend 5                                 # ranked by your taste
-alit ask "What are the key attention mechanisms?" --depth 2
-```
-
-The agent reads papers, stores summaries with `alit summarize`, builds citations with `alit cite`, and checks what to read next with `alit recommend`. Repeat.
+No servers. No API keys. No vector databases. Run `alit --help` for the full command list.
 
 ## Update
 
 ```bash
 pip install --upgrade agent-lit
 ```
-
-Run `alit --help` for the full command list.
 
 ## Under the hood
 
