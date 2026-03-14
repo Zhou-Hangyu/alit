@@ -8,42 +8,44 @@ description: "SQLite-based literature review manager for research papers. Use wh
 
 Data lives in `.alit/papers.db`. PDFs in `.alit/pdfs/`. Zero external dependencies.
 
-## Setup
+## Session Start
 
-1. Run `alit init` to create the database.
-2. Run `alit taste "your research interests and what excites you"` to improve recommendations.
+Always begin a session with:
 
-## Adding Papers
+1. Run `alit progress` to see current state (papers, coverage, what needs work).
+2. Decide what to do: find new papers, read existing ones, or answer a question.
 
-1. For arXiv papers, run `alit add "https://arxiv.org/abs/XXXX.XXXXX"`. This fetches metadata, downloads the PDF, and auto-tags from the abstract.
-2. For non-arXiv papers, run `alit add "Title" --year 2024 --authors "Smith" --abstract "..."`.
-3. To attach a local PDF, pass `--pdf /path/to/file.pdf`.
-4. To bulk-add from a file of arXiv URLs (one per line, `#` comments), run `alit import papers.txt`.
-5. To import from Zotero/Mendeley/Google Scholar, export as `.bib` and run `alit import library.bib`.
-6. To search for papers by topic, run `alit find "query"` or `alit find "query" --source s2`.
-7. To set up recurring BibTeX sync (e.g. from Zotero), run `alit sync --source /path/to/library.bib` once, then `alit sync` anytime to pull new papers.
-8. To fetch metadata for papers missing abstracts, run `alit enrich`.
-9. Skip PDF downloads on any command with `--no-pdf`.
+## Pipeline
 
-## Reading Workflow
+Follow this order. Do not skip steps or mix phases.
 
-1. Run `alit recommend 5` to get the next papers to read, ranked by PageRank + relevance + recency.
-2. Run `alit read <id>` to see the paper's abstract, citations, and summaries.
-3. Read the PDF at `.alit/pdfs/<arxiv_id>.pdf` if available.
-4. After reading, store findings:
+### Phase 1: Find papers
+
+1. Check if already in DB first: `alit show <arxiv_id_or_url>` — returns the paper if it exists, error if not.
+2. Add new papers: `alit add "https://arxiv.org/abs/XXXX.XXXXX"` — auto-fetches metadata + PDF.
+3. For non-arXiv papers: `alit add "Title" --year 2024 --authors "Smith" --abstract "..."`.
+4. To bulk-add: `alit import papers.txt` (one arXiv URL per line) or `alit import library.bib` (BibTeX).
+5. To search for papers by topic: `alit find "query"`.
+6. After adding papers, run `alit enrich` to backfill any missing metadata.
+7. Run `alit auto-cite` to extract citation edges from PDFs.
+
+### Phase 2: Read papers
+
+1. Run `alit recommend 5` to pick what to read next. Output includes taste context and abstracts — use your judgment to rerank if needed.
+2. Run `alit read <id>` to see the paper's abstract, citations, and existing summaries.
+3. Read the PDF at `.alit/pdfs/<filename>.pdf` if available.
+4. After reading, store findings in this order:
    - `alit status <id> read`
    - `alit note <id> "key observations..."`
    - `alit summarize <id> --l4 "one sentence summary" --model "<model-name>"`
    - `alit summarize <id> --l2 '["claim 1", "claim 2"]' --model "<model-name>"`
-5. Always pass `--model` when summarizing — provenance is tracked.
+5. Always pass `--model` when summarizing.
 
-## Citations
+### Phase 3: Verify citations
 
-1. Run `alit auto-cite` to automatically extract arXiv references from downloaded PDFs and build citation edges. This is the fastest way to build the citation graph.
-2. Run `alit cite <from_id> <to_id> --type extends` to manually add a citation edge. Types: cites, extends, contradicts, uses_method, uses_dataset, surveys.
-3. The cited paper does not need to exist in the database yet.
-4. Run `alit orphans` to list cited papers not in the collection.
-5. For each orphan, search online to verify the paper exists, then `alit add` it.
+1. Run `alit orphans` to find cited papers not in the collection.
+2. For each orphan, search online to verify it exists, then `alit add` it.
+3. Run `alit auto-cite` again if new PDFs were added.
 
 ## Search and Synthesis
 
@@ -54,31 +56,35 @@ Data lives in `.alit/papers.db`. PDFs in `.alit/pdfs/`. Zero external dependenci
    - `--depth 3`: + key claims for top-3 (~3.5K tokens)
    - `--depth 4`: + full notes for top-1 (~5K tokens)
 
+## Setup (first time only)
+
+1. Run `alit init` to create the database.
+2. Run `alit taste "your research interests and what excites you"` to set recommendations.
+
 ## Commands
 
 | Command | Description |
 |---------|-------------|
 | `alit init` | Create `.alit/papers.db` |
+| `alit progress` | Visual progress dashboard |
+| `alit taste [text]` | Set or show research taste |
 | `alit add <title-or-url>` | Add paper (auto-enriches arXiv, auto-tags) |
+| `alit show <id-or-arxiv>` | Paper details (accepts paper ID, arXiv ID, or URL) |
 | `alit find <query>` | Search arXiv/S2 for papers by topic |
 | `alit import <file>` | Bulk-add from URL file or BibTeX |
-| `alit sync` | Import from remembered BibTeX source (Zotero, etc.) |
+| `alit sync` | Import from remembered BibTeX source |
 | `alit enrich` | Batch-fetch metadata for papers missing abstracts |
+| `alit auto-cite` | Extract citations from PDFs automatically |
 | `alit search <query>` | BM25 full-text search |
 | `alit recommend [N]` | Reading queue ranked by score |
 | `alit ask <question>` | Cross-paper synthesis |
 | `alit read <id>` | Guided reading view |
-| `alit show <id>` | Paper details + citations |
 | `alit list` | List papers (default 20, `--all` for full) |
 | `alit note <id> <text>` | Append notes |
 | `alit summarize <id>` | Store L4/L2 summary with `--model` provenance |
 | `alit cite <from> <to>` | Add citation edge with `--type` |
-| `alit auto-cite` | Extract citations from PDFs automatically |
 | `alit status <id> <s>` | Set status: unread, skimmed, read, synthesized |
 | `alit tag <id> <tags>` | Set comma-separated tags |
-| `alit taste [text]` | Set or show research taste |
-| `alit progress` | Visual progress dashboard |
-| `alit stats` | Collection overview |
 | `alit orphans` | List citations to missing papers |
 | `alit attach <id> <pdf>` | Attach local PDF |
 | `alit fetch-pdf <id>` | Download PDF from arXiv |
@@ -90,7 +96,9 @@ All commands support `--json` for machine-readable output.
 ## Conventions
 
 - **IDs**: lowercase, no spaces (e.g. `vaswani2017attention`). Auto-generated if omitted.
+- **Deduplication**: `alit add` merges if paper already exists — safe to call multiple times.
 - **Status progression**: unread → skimmed → read → synthesized.
 - **Citation types**: cites, extends, contradicts, uses_method, uses_dataset, surveys.
 - **Provenance**: always pass `--model` when summarizing.
 - **PDFs**: stored in `.alit/pdfs/`, auto-downloaded for arXiv papers.
+- **Check before adding**: `alit show <arxiv_id>` to avoid redundant work.
