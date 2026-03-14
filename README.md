@@ -1,27 +1,27 @@
-# agent-litreview
+# alit
 
 Lightweight literature review system for AI coding agents. Zero dependencies. SQLite-only.
 
 ## Install
 
 ```bash
-pip install agent-litreview
+pip install alit
 ```
 
 ## Use
 
 ```bash
-lit init
-lit add "Attention Is All You Need" --year 2017 --abstract "..." --id vaswani2017attention
-lit search "attention"
-lit recommend 5
-lit ask "What approaches exist for sequence modeling?" --depth 2
+alit init
+alit add "Attention Is All You Need" --year 2017 --abstract "..." --id vaswani2017attention
+alit search "attention"
+alit recommend 5
+alit ask "What approaches exist for sequence modeling?" --depth 2
 ```
 
 ## Agent Integration
 
 ```bash
-lit install-skill    # installs SKILL.md for opencode/Claude Code
+alit install-skill    # installs SKILL.md for opencode/Claude Code
 ```
 
-See `lit --help` for all commands.
+See `alit --help` for all commands.

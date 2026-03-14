@@ -1,3 +1,4 @@
+from __future__ import annotations
 """BM25 full-text search over the SQLite FTS5 index.
 
 Zero dependencies. Pure Python stdlib only.

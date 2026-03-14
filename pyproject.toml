@@ -1,17 +1,17 @@
 [project]
-name = "agent-litreview"
+name = "alit"
 version = "0.2.0"
 description = "Lightweight, agent-native literature review system. Zero dependencies. SQLite-only."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
-keywords = ["literature-review", "research", "agents", "sqlite"]
+keywords = ["literature-review", "research", "agents", "sqlite", "alit"]
 
 [project.scripts]
-lit = "literature.scripts.lit:main"
+alit = "literature.scripts.lit:main"
 
 [project.urls]
-Repository = "https://github.com/Zhou-Hangyu/agent-litreview"
+Repository = "https://github.com/Zhou-Hangyu/alit"
 
 [build-system]
 requires = ["hatchling"]

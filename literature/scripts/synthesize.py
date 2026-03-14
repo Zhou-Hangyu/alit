@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Multi-stage funnel retrieval engine for cross-paper synthesis.
 
 Zero dependencies. Pure Python stdlib only. Reads from DB directly.

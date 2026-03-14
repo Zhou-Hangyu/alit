@@ -51,9 +51,9 @@ def _cmd_init(args: argparse.Namespace) -> int:
     print(f"Initialized papers.db at {db_path}")
     print()
     print("Next steps:")
-    print('  lit add "Paper Title" --year 2024 --abstract "..."')
-    print('  lit search "topic"')
-    print("  lit recommend 5")
+    print('  alit add "Paper Title" --year 2024 --abstract "..."')
+    print('  alit search "topic"')
+    print("  alit recommend 5")
     return 0
 
 
@@ -388,7 +388,7 @@ def _cmd_install_skill(args: argparse.Namespace) -> int:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="lit",
+        prog="alit",
         description="Lightweight literature review CLI. SQLite-only, zero dependencies.",
     )
     parser.add_argument("--json", action="store_true", help="Output JSON")

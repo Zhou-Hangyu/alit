@@ -1,3 +1,4 @@
+from __future__ import annotations
 """SQLite database layer — sole source of truth for the literature review system.
 
 Zero dependencies. Pure Python stdlib only.

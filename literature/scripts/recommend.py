@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Reading queue recommendation engine.
 
 Zero dependencies. Pure Python stdlib only. Reads from DB directly.

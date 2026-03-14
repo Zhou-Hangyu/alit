@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Pure Python PageRank for the literature citation graph.
 
 Zero dependencies. No scipy, no numpy. Pure Python stdlib only.
