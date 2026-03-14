@@ -1,7 +1,7 @@
 [project]
 name = "agent-lit"
 version = "0.3.0"
-description = "Persistent memory for AI agents doing literature review. Zero dependencies. SQLite-only."
+description = "Persistent memory for AI agents doing literature review with your taste."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"

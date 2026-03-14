@@ -58,12 +58,18 @@ def _cmd_init(args: argparse.Namespace) -> int:
         return 0
     conn = init_db(target)
     conn.close()
+
+    gitignore = target / ".gitignore"
+    entry = ".alit/"
+    if gitignore.exists():
+        content = gitignore.read_text()
+        if entry not in content:
+            with gitignore.open("a") as f:
+                f.write(f"\n{entry}\n")
+    else:
+        gitignore.write_text(f"{entry}\n")
+
     print(f"(-o-) Initialized {target / LIT_DIR}/")
-    print()
-    print("Next steps:")
-    print('  alit add "Paper Title" --year 2024 --abstract "..."')
-    print('  alit search "topic"')
-    print("  alit recommend 5")
     return 0
 
 
