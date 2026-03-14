@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import urllib.parse
 from pathlib import Path
@@ -175,8 +176,20 @@ def _cmd_add(args: argparse.Namespace, conn) -> int:
 def _cmd_show(args: argparse.Namespace, conn) -> int:
     paper = get_paper(conn, args.id)
     if paper is None:
-        print(f"Paper not found: {args.id}", file=sys.stderr)
-        return 1
+        paper_row = conn.execute(
+            "SELECT * FROM papers WHERE arxiv_id = ?", (args.id,)
+        ).fetchone()
+        if paper_row is None:
+            clean = re.sub(r"^(https?://)?arxiv\.org/(abs|pdf)/", "", args.id).rstrip(".pdf").strip("/")
+            paper_row = conn.execute(
+                "SELECT * FROM papers WHERE arxiv_id = ?", (clean,)
+            ).fetchone()
+        if paper_row:
+            paper = dict(paper_row)
+            args.id = paper["id"]
+        else:
+            print(f"(xox) Not found: {args.id}", file=sys.stderr)
+            return 1
     if getattr(args, "json", False):
         from alit.scripts.db import get_citations
         cites = get_citations(conn, args.id)
