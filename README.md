@@ -1,12 +1,38 @@
 # (-o-) alit
 
-Your AI agent reads papers with your taste so you don't have to.
+Your agent forgets every paper it's ever read.
+
+alit is a local knowledge base for AI agents doing literature review. One agent reads 50 papers and stores structured summaries, citations, and reading status. The next agent — or the same agent next week — queries that knowledge instantly.
+
+The agent builds the knowledge. You set the taste. Knowledge compounds.
 
 `pip install agent-lit` → zero dependencies, SQLite-only, works with any coding agent.
 
-Same spirit as [autoresearch](https://github.com/karpathy/autoresearch) — but for the literature review that comes before experiments. Give your agent a research taste, point it at arXiv, and let it go. It reads papers, writes summaries, builds a citation graph, and ranks what to read next. You wake up to a structured knowledge base instead of 47 open browser tabs. The agent modifies the knowledge. You modify the taste. That's the whole loop.
+## The core loop
 
-Why not just web search? Your agent forgets everything next session. alit is persistent memory — one agent reads 50 papers, another queries that knowledge instantly. Knowledge compounds across sessions.
+```bash
+alit taste "vision-language grounding, embodied AI"   # you set direction
+alit recommend 5                                       # agent picks what to read
+alit summarize <id> --l4 "..." --model claude          # agent stores findings
+alit ask "what approaches exist for X?" --depth 2      # agent synthesizes
+```
+
+Run `alit --help` for the full command list (25 commands for search, import, export, citations, and more).
+
+## What alit does and doesn't do
+
+| | alit | The agent |
+|--|------|-----------|
+| **Stores** papers, summaries, citations, taste | ✓ | |
+| **Ranks** recommendations (PageRank + taste + recency) | ✓ | |
+| **Retrieves** context for synthesis | ✓ | |
+| **Persists** across sessions | ✓ | |
+| **Reads** papers | | ✓ |
+| **Writes** summaries | | ✓ |
+| **Decides** what to cite | | ✓ |
+| **Answers** research questions | | ✓ |
+
+alit stores and retrieves. The agent thinks. You set the taste.
 
 ## Setup
 
@@ -14,15 +40,13 @@ Why not just web search? Your agent forgets everything next session. alit is per
 pip install agent-lit    # or: uv add agent-lit
 ```
 
-## Running the agent
-
-Spin up Claude Code, opencode, Cursor, or whatever you use in your project, then prompt:
+Spin up Claude Code, opencode, Cursor, or whatever you use, then prompt:
 
 ```
 Set up alit for literature review in this project. See https://github.com/Zhou-Hangyu/alit
 ```
 
-The agent will run `alit init`, set your taste, and start adding papers. From there you can prompt things like:
+From there:
 
 ```
 Find and add the top 10 papers on vision-language grounding from the last 2 years.
@@ -36,32 +60,15 @@ Read the next 5 recommended papers and summarize each one.
 What does the literature say about cross-modal attention mechanisms?
 ```
 
-```
-Import my Zotero library from library.bib and enrich everything.
-```
-
-The `alit taste` is your research program — update it as your interests evolve:
-
-```
-Update my research taste: I'm now more interested in embodied AI
-and less in pure vision-language benchmarks.
-```
-
 ## How it works
-
-Three things that matter:
-
-- **`.alit/papers.db`** — one SQLite file. The entire knowledge base. Summaries, citations, PageRank scores, reading status. Agent reads and writes this.
-- **`alit taste`** — your research program. What excites you, what to prioritize. You edit this, agent follows it. Like `program.md` but for literature.
-- **`alit` CLI** — the agent's interface. Search, recommend, synthesize, add papers. All via Bash commands.
 
 ```
 .alit/
-├── papers.db    ← one file, entire knowledge base
+├── papers.db    ← one SQLite file, entire knowledge base
 └── pdfs/        ← auto-downloaded from arXiv
 ```
 
-No servers. No API keys. No vector databases. Run `alit --help` for the full command list.
+No servers. No API keys. No vector databases.
 
 ## Update
 

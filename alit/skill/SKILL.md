@@ -1,7 +1,7 @@
 ---
 name: alit
 version: "0.3.0"
-description: "SQLite-based literature review manager for research papers. Use when adding, searching, reading, summarizing, or synthesizing academic papers. Handles arXiv URLs, BibTeX import, citation graphs, and reading recommendations. Do not use for non-academic document management, note-taking apps, or reference formatting (use a citation manager instead)."
+description: "Persistent knowledge base for literature review. Use when the user wants to review academic papers, find what to read next, build on prior reading sessions, or answer research questions from collected papers. Handles arXiv URLs, BibTeX import, citation graphs, and reading recommendations. Do not use for non-academic documents, note-taking, or reference formatting."
 ---
 
 # alit — Literature Review System
