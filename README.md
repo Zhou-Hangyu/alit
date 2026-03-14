@@ -37,6 +37,13 @@ alit init                # creates .alit/ in your project
 alit install-skill       # teaches your agent the full workflow
 ```
 
+## Update
+
+```bash
+pip install --upgrade alit
+alit install-skill
+```
+
 ## Set your taste
 
 Tell alit what kind of research excites you. This drives recommendations — papers matching your taste rank higher.
