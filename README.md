@@ -4,9 +4,24 @@ Literature review tool for AI coding agents. Zero dependencies. SQLite-only.
 
 The agent is the intelligence — alit is data plumbing.
 
+Tell your agent: `"Use alit to manage my literature review. See https://github.com/Zhou-Hangyu/alit"`
+
+## What is alit
+
 ```
-Tell your agent: "Use alit to manage my literature review. See https://github.com/Zhou-Hangyu/alit"
+.alit/
+├── papers.db    ← SQLite (sole source of truth)
+└── pdfs/        ← downloaded PDFs
 ```
+
+No servers. No API keys. No vector databases. Scales to 10K+ papers.
+
+- **Search**: BM25 via SQLite FTS5
+- **Ranking**: PageRank on citation graph (pure Python)
+- **Recommendations**: PageRank + recency + purpose keyword matching
+- **Synthesis**: multi-stage funnel retrieval (~5K tokens to query 10K papers)
+- **Enrichment**: arXiv API (batched) with Semantic Scholar fallback
+- **Backward compatible**: schema auto-migrates on upgrade
 
 ## Install
 
@@ -63,23 +78,6 @@ alit import papers.txt
 # From Zotero / Mendeley / Google Scholar (.bib export)
 alit import library.bib
 ```
-
-## Architecture
-
-```
-.alit/
-├── papers.db    ← SQLite (sole source of truth)
-└── pdfs/        ← downloaded PDFs
-```
-
-No servers. No API keys. No vector databases. Scales to 10K+ papers.
-
-- **Search**: BM25 via SQLite FTS5
-- **Ranking**: PageRank on citation graph (pure Python)
-- **Recommendations**: PageRank + recency + purpose keyword matching
-- **Synthesis**: multi-stage funnel retrieval (~5K tokens to query 10K papers)
-- **Enrichment**: arXiv API (batched) with Semantic Scholar fallback
-- **Backward compatible**: schema auto-migrates on upgrade
 
 ## Development
 
