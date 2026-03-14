@@ -15,13 +15,13 @@ SCHEMA_VERSION = 2
 
 
 def get_db(path: Path | None = None) -> sqlite3.Connection:
-    """Open the papers database (must already exist)."""
     db_path = (path or Path.cwd()) / DB_NAME
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA foreign_keys=ON")
+    _migrate_schema(conn)
     return conn
 
 
