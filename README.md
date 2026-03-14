@@ -4,6 +4,10 @@ Literature review tool for AI coding agents. Zero dependencies. SQLite-only.
 
 The agent is the intelligence — alit is data plumbing.
 
+```
+Tell your agent: "Use alit to manage my literature review. See https://github.com/Zhou-Hangyu/alit"
+```
+
 ## Install
 
 ```bash
@@ -11,8 +15,6 @@ pip install alit    # or: uv add alit
 alit init           # creates .alit/ in your project
 alit install-skill  # teaches your agent how to use alit
 ```
-
-Then tell your agent: **"Use alit to manage my literature review. See https://github.com/Zhou-Hangyu/alit"**
 
 ## Commands
 
