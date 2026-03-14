@@ -1,5 +1,5 @@
 [project]
-name = "alit"
+name = "agent-lit"
 version = "0.3.0"
 description = "Persistent memory for AI agents doing literature review. Zero dependencies. SQLite-only."
 readme = "README.md"

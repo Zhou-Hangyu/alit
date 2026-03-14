@@ -2,7 +2,7 @@
 
 Your AI agent reads papers so you don't have to.
 
-`pip install alit` → zero dependencies, SQLite-only, works with any coding agent.
+`pip install agent-lit` → zero dependencies, SQLite-only, works with any coding agent.
 
 Got tokens to burn? Let your agent read 50 papers overnight and hand you a synthesis in the morning.
 
@@ -29,7 +29,7 @@ No servers. No API keys. No vector databases. No setup beyond `pip install`.
 ## Install
 
 ```bash
-pip install alit         # or: uv add alit
+pip install agent-lit    # or: uv add agent-lit
 alit init                # creates .alit/ in your project
 ```
 
@@ -55,7 +55,7 @@ alit ask "What are the key attention mechanisms?" --depth 2
 ## Update
 
 ```bash
-pip install --upgrade alit
+pip install --upgrade agent-lit
 ```
 
 ## Commands
