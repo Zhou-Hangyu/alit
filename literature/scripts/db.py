@@ -124,8 +124,7 @@ def _fetch_url(url: str, *, timeout: int = 30, max_retries: int = 3) -> bytes:
             raise
         except Exception:
             if attempt < max_retries - 1:
-                import time as _t
-                _t.sleep(3 * (attempt + 1))
+                time.sleep(3 * (attempt + 1))
                 continue
             raise
     return b""
@@ -250,7 +249,7 @@ def _arxiv_pdf_url(arxiv_id: str) -> str:
 def download_pdf(url: str, dest: Path, *, timeout: int = 60) -> bool:
     """Download a PDF from url to dest. Returns True on success."""
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "agent-litreview/0.2"})
+        req = urllib.request.Request(url, headers={"User-Agent": "alit/0.2"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             if resp.status != 200:
                 return False
@@ -309,21 +308,33 @@ def fetch_pdf_for_paper(
     return None
 
 
+_VALID_PAPER_FIELDS = frozenset({
+    "id", "title", "authors", "year", "abstract", "url", "arxiv_id", "doi",
+    "tags", "status", "notes", "summary_l4", "summary_l4_model", "summary_l4_at",
+    "summary_l2", "summary_l2_model", "summary_l2_at", "pdf_path", "pagerank",
+})
+
+
+def _sanitize_id(raw: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9_.-]", "_", raw).strip("_") or "paper"
+
+
 def add_paper(conn: sqlite3.Connection, id: str, title: str, **kwargs) -> dict:
-    """Insert or replace a paper. Returns the row as dict."""
-    fields = {k: v for k, v in kwargs.items() if v is not None}
+    """Insert a paper, or update fields if it already exists. Never loses existing data."""
+    id = _sanitize_id(id)
+    existing = get_paper(conn, id)
+    if existing:
+        updates = {k: v for k, v in kwargs.items() if v is not None and k in _VALID_PAPER_FIELDS}
+        if title:
+            updates["title"] = title
+        return update_paper(conn, id, **updates)
+
+    fields = {k: v for k, v in kwargs.items() if v is not None and k in _VALID_PAPER_FIELDS}
     fields["id"] = id
     fields["title"] = title
     cols = ", ".join(fields.keys())
     placeholders = ", ".join("?" for _ in fields)
-    conn.execute(
-        f"INSERT OR REPLACE INTO papers ({cols}) VALUES ({placeholders})",
-        list(fields.values()),
-    )
-    conn.execute(
-        "UPDATE papers SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
-        (id,),
-    )
+    conn.execute(f"INSERT INTO papers ({cols}) VALUES ({placeholders})", list(fields.values()))
     conn.commit()
     return dict(conn.execute("SELECT * FROM papers WHERE id = ?", (id,)).fetchone())
 
@@ -406,8 +417,9 @@ def get_orphan_citations(conn: sqlite3.Connection) -> list[dict]:
 
 
 def delete_paper(conn: sqlite3.Connection, id: str) -> bool:
-    """Delete a paper by id. Returns True if deleted."""
+    """Delete a paper and its citation edges. Returns True if deleted."""
     cur = conn.execute("DELETE FROM papers WHERE id = ?", (id,))
+    conn.execute("DELETE FROM citations WHERE from_id = ? OR to_id = ?", (id, id))
     conn.commit()
     return cur.rowcount > 0
 

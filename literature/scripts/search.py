@@ -34,5 +34,5 @@ def search(conn: sqlite3.Connection, query: str, top_k: int = 20) -> list[dict]:
             (escaped, top_k),
         ).fetchall()
         return [dict(r) for r in rows]
-    except Exception:
+    except sqlite3.OperationalError:
         return []

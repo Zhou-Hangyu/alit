@@ -36,7 +36,7 @@ def recommend(
     scored = []
     for p in papers:
         # Recency: half-life of 3 years
-        age = current_year - (p["year"] or 2000)
+        age = max(0, current_year - (p["year"] or 2000))
         recency = math.exp(-age * math.log(2) / 3.0)
 
         # PageRank signal (normalised)

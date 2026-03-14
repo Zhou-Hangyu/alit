@@ -29,12 +29,19 @@ from literature.scripts.db import init_db, list_papers, update_paper
 # ── Helper ─────────────────────────────────────────────────────────────────────
 
 
-def _auto_id(title: str) -> str:
-    """Generate a simple id from title: lowercase, spaces→underscores, truncated."""
+def _auto_id(title: str, conn=None) -> str:
     import re
     slug = re.sub(r"[^a-z0-9\s]", "", title.lower())
     words = slug.split()[:4]
-    return "_".join(words) or "paper"
+    base = "_".join(words) or "paper"
+    if conn is None:
+        return base
+    candidate = base
+    counter = 2
+    while conn.execute("SELECT 1 FROM papers WHERE id = ?", (candidate,)).fetchone():
+        candidate = f"{base}_{counter}"
+        counter += 1
+    return candidate
 
 
 # ── Commands ───────────────────────────────────────────────────────────────────
@@ -60,7 +67,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
 def _cmd_add(args: argparse.Namespace, conn) -> int:
     title = args.title
-    paper_id = getattr(args, "id", None) or _auto_id(title)
+    paper_id = getattr(args, "id", None) or _auto_id(title, conn)
     kwargs = {}
     for field in ("year", "authors", "abstract", "url", "arxiv_id", "doi", "tags"):
         val = getattr(args, field, None)
@@ -214,7 +221,7 @@ def _cmd_cite(args: argparse.Namespace, conn) -> int:
 
     add_citation(conn, from_id, to_id, type_)
     if not get_paper(conn, to_id):
-        print(f"Citation added: {from_id} --[{type_}]--> {to_id}  (⚠ {to_id} not in collection — run `lit orphans` to review)")
+        print(f"Citation added: {from_id} --[{type_}]--> {to_id}  (⚠ {to_id} not in collection — run `alit orphans` to review)")
     else:
         print(f"Citation added: {from_id} --[{type_}]--> {to_id}")
     return 0
@@ -253,7 +260,10 @@ def _cmd_recommend(args: argparse.Namespace, conn) -> int:
         purpose_keywords = [w for w in words if len(w) > 3][:30]
 
     raw = getattr(args, "n", None)
-    top_k = int(raw) if raw else 10
+    try:
+        top_k = int(raw) if raw else 10
+    except (ValueError, TypeError):
+        top_k = 10
     batch_size = getattr(args, "batch", 5) or 5
 
     results = recommend(conn, top_k=top_k, purpose_keywords=purpose_keywords)
@@ -595,7 +605,7 @@ def run(argv: list[str] | None = None, *, root: str | Path | None = None) -> int
     # All other commands need papers.db
     db_path = Path(root) if root else Path.cwd()
     if not (db_path / DB_NAME).exists():
-        print(f"No papers.db found. Run 'lit init' first.", file=sys.stderr)
+        print("No papers.db found. Run 'alit init' first.", file=sys.stderr)
         return 1
 
     conn = get_db(db_path)
