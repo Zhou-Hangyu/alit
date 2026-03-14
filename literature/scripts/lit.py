@@ -897,10 +897,14 @@ def _cmd_install_skill(args: argparse.Namespace) -> int:
     if not skill_src.exists():
         print(f"Error: SKILL.md not found at {skill_src}", file=sys.stderr)
         return 1
-    skill_dest = Path.home() / ".agents" / "skills" / "literature-review"
-    skill_dest.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(skill_src, skill_dest / "SKILL.md")
-    print(f"Installed SKILL.md to {skill_dest / 'SKILL.md'}")
+    targets = [
+        Path.home() / ".claude" / "skills" / "alit",
+        Path.home() / ".agents" / "skills" / "alit",
+    ]
+    for dest in targets:
+        dest.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(skill_src, dest / "SKILL.md")
+        print(f"  → {dest / 'SKILL.md'}")
     return 0
 
 

@@ -1,5 +1,5 @@
 ---
-name: literature-review
+name: alit
 description: "Lightweight literature review system. Zero dependencies, SQLite-only. Use when managing research papers — adding, searching, reading, summarizing, synthesizing. Run `alit init` to start."
 ---
 
