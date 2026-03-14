@@ -581,6 +581,11 @@ def _cmd_auto_cite(args: argparse.Namespace, conn) -> int:
         print(f"(-o+) Scanned {result['scanned']} PDFs, added {result['edges_added']} citation edges")
     else:
         print(f"(-o-) Scanned {result['scanned']} PDFs, no new citations found")
+    missing = result.get("missing", [])
+    if missing:
+        print(f"\nFrequently cited papers not in collection:")
+        for arxiv_id, count in missing:
+            print(f"  {count}x  arxiv:{arxiv_id}  → alit add \"https://arxiv.org/abs/{arxiv_id}\"")
     return 0
 
 

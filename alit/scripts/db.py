@@ -493,7 +493,12 @@ def extract_references_from_pdf(pdf_path: Path) -> list[str]:
     except Exception:
         return []
 
-    arxiv_ids = set(re.findall(r"(?:arXiv:?\s*)?(\d{4}\.\d{4,5})(?:v\d+)?", text))
+    arxiv_ids = set()
+    for m in re.finditer(r"(\d{4})\.(\d{4,5})(?:v\d+)?", text):
+        yymm, seq = m.group(1), m.group(2)
+        yy, mm = int(yymm[:2]), int(yymm[2:])
+        if 7 <= yy <= 30 and 1 <= mm <= 12:
+            arxiv_ids.add(f"{yymm}.{seq}")
     return sorted(arxiv_ids)
 
 
@@ -509,6 +514,7 @@ def auto_cite_from_pdfs(conn: sqlite3.Connection, db_path: Path) -> dict:
 
     edges_added = 0
     papers_scanned = 0
+    missing_refs: dict[str, int] = {}
 
     for paper in papers:
         pdf_file = db_path / LIT_DIR / paper["pdf_path"]
@@ -523,22 +529,25 @@ def auto_cite_from_pdfs(conn: sqlite3.Connection, db_path: Path) -> dict:
             if ref_arxiv == own_arxiv:
                 continue
             target_id = known_arxiv.get(ref_arxiv)
-            if not target_id:
-                continue
-            existing = conn.execute(
-                "SELECT 1 FROM citations WHERE from_id = ? AND to_id = ?",
-                (paper["id"], target_id),
-            ).fetchone()
-            if not existing:
-                conn.execute(
-                    "INSERT INTO citations (from_id, to_id, type) VALUES (?, ?, 'cites')",
+            if target_id:
+                existing = conn.execute(
+                    "SELECT 1 FROM citations WHERE from_id = ? AND to_id = ?",
                     (paper["id"], target_id),
-                )
-                edges_added += 1
+                ).fetchone()
+                if not existing:
+                    conn.execute(
+                        "INSERT INTO citations (from_id, to_id, type) VALUES (?, ?, 'cites')",
+                        (paper["id"], target_id),
+                    )
+                    edges_added += 1
+            else:
+                missing_refs[ref_arxiv] = missing_refs.get(ref_arxiv, 0) + 1
 
     if edges_added:
         conn.commit()
-    return {"scanned": papers_scanned, "edges_added": edges_added}
+
+    top_missing = sorted(missing_refs.items(), key=lambda x: x[1], reverse=True)[:10]
+    return {"scanned": papers_scanned, "edges_added": edges_added, "missing": top_missing}
 
 
 _VALID_PAPER_FIELDS = frozenset({
