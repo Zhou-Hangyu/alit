@@ -18,27 +18,33 @@ alit recommend 5             # what to read next
 
 ## Adding Papers
 
-You (the agent) read the paper or its arXiv page, then store the metadata:
+Simplest way — just paste an arXiv URL:
 
 ```bash
-alit add "Attention Is All You Need" \
-  --id vaswani2017attention \
-  --year 2017 \
-  --authors "Vaswani, Shazeer, Parmar" \
-  --abstract "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks..." \
-  --url "https://arxiv.org/abs/1706.03762" \
-  --arxiv "1706.03762" \
-  --tags "transformers,attention,nlp"
+alit add "https://arxiv.org/abs/1706.03762"
 ```
 
-If `--id` is omitted, one is auto-generated from the title.
+This auto-fetches title, abstract, authors, year from arXiv + downloads the PDF. One command, done.
 
-PDFs are handled automatically:
-- `--arxiv "1706.03762"` → auto-downloads from arXiv
-- `--pdf /path/to/local.pdf` → copies a local PDF handed to you in the session
-- `--no-pdf` → skip download
+For non-arXiv papers, provide metadata yourself:
+
+```bash
+alit add "Some Workshop Paper" --year 2024 --authors "Smith, Jones" --abstract "..."
+```
+
+Bulk import from a file:
+
+```bash
+alit import papers.txt          # one arXiv URL per line, # comments
+alit import papers.txt --no-pdf # skip PDF downloads
+```
+
+PDFs:
+- arXiv URLs → auto-downloaded
+- `--pdf /path/to/local.pdf` → copies a PDF handed to you in the session
 - `alit attach <id> /path/to/file.pdf` → attach PDF to existing paper
-- `alit fetch-pdf <id>` → download PDF for existing paper (needs arxiv_id)
+- `alit fetch-pdf <id>` → download for existing paper
+- `--no-pdf` → skip download
 
 ## After Reading a Paper
 
@@ -93,7 +99,9 @@ alit recommend 5
 | Command | What it does |
 |---------|-------------|
 | `alit init` | Create papers.db |
-| `alit add <title> [opts]` | Add paper with metadata |
+| `alit add <title-or-url>` | Add paper (auto-enriches arXiv URLs) |
+| `alit import <file>` | Bulk-add from file of arXiv URLs |
+| `alit enrich` | Batch-fetch metadata for papers missing abstracts |
 | `alit show <id>` | Paper details |
 | `alit list [--status X]` | List papers |
 | `alit search <query>` | BM25 search |
@@ -120,5 +128,5 @@ All commands support `--json` for machine-readable output.
 - **Status**: unread → skimmed → read → synthesized
 - **Citation types**: cites, extends, contradicts, uses_method, uses_dataset, surveys
 - **Provenance**: always pass `--model` when summarizing — it's tracked
-- **PDFs**: auto-downloaded from arXiv, or attached from local files via `--pdf` or `lit attach`
-- **Orphan citations**: `lit orphans` shows cited papers not in collection — verify and add them
+- **PDFs**: auto-downloaded from arXiv, or attached from local files via `--pdf` or `alit attach`
+- **Orphan citations**: `alit orphans` shows cited papers not in collection — verify and add them

@@ -100,7 +100,27 @@ def init_db(path: Path | None = None) -> sqlite3.Connection:
         END;
     """)
     conn.commit()
+    _migrate_schema(conn)
     return conn
+
+
+def _migrate_schema(conn: sqlite3.Connection) -> None:
+    """Add columns that may be missing in older databases."""
+    existing = {r[1] for r in conn.execute("PRAGMA table_info(papers)").fetchall()}
+    migrations = [
+        ("pdf_path", "TEXT DEFAULT ''"),
+        ("pagerank", "REAL DEFAULT 0.0"),
+        ("summary_l4", "TEXT DEFAULT ''"),
+        ("summary_l4_model", "TEXT DEFAULT ''"),
+        ("summary_l4_at", "TEXT DEFAULT ''"),
+        ("summary_l2", "TEXT DEFAULT ''"),
+        ("summary_l2_model", "TEXT DEFAULT ''"),
+        ("summary_l2_at", "TEXT DEFAULT ''"),
+    ]
+    for col, typedef in migrations:
+        if col not in existing:
+            conn.execute(f"ALTER TABLE papers ADD COLUMN {col} {typedef}")
+    conn.commit()
 
 
 def _clean_arxiv_id(raw: str) -> str:

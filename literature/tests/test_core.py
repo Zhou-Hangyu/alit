@@ -325,3 +325,107 @@ def test_cli_init(tmp_path):
     code = run(["init", "--path", str(target)])
     assert code == 0
     assert (target / "papers.db").exists()
+
+
+def test_upsert_preserves_existing_data(db):
+    add_paper(db, "p1", "Original Title", year=2020, abstract="Original abstract",
+              notes="My important notes", status="read")
+    add_paper(db, "p1", "Updated Title", year=2021)
+    paper = get_paper(db, "p1")
+    assert paper["title"] == "Updated Title"
+    assert paper["year"] == 2021
+    assert paper["notes"] == "My important notes"
+    assert paper["status"] == "read"
+    assert paper["abstract"] == "Original abstract"
+
+
+def test_delete_cascades_citations(db):
+    add_paper(db, "p1", "Paper One")
+    add_paper(db, "p2", "Paper Two")
+    add_paper(db, "p3", "Paper Three")
+    add_citation(db, "p1", "p2")
+    add_citation(db, "p3", "p1")
+    assert db.execute("SELECT COUNT(*) FROM citations").fetchone()[0] == 2
+    delete_paper(db, "p1")
+    assert db.execute("SELECT COUNT(*) FROM citations").fetchone()[0] == 0
+
+
+def test_orphan_citations(db):
+    from literature.scripts.db import get_orphan_citations
+    add_paper(db, "p1", "Paper One")
+    add_citation(db, "p1", "missing_paper")
+    orphans = get_orphan_citations(db)
+    assert len(orphans) == 1
+    assert orphans[0]["to_id"] == "missing_paper"
+
+
+def test_sanitize_id(db):
+    from literature.scripts.db import _sanitize_id
+    assert _sanitize_id("hello world!@#") == "hello_world"
+    assert _sanitize_id("valid_id-123") == "valid_id-123"
+    assert _sanitize_id("") == "paper"
+
+
+def test_auto_id_uniqueness(tmp_path):
+    from literature.scripts.lit import _auto_id
+    conn = init_db(tmp_path)
+    add_paper(conn, "attention_is_all", "Attention Is All You Need")
+    second_id = _auto_id("Attention Is All You Need", conn)
+    assert second_id != "attention_is_all"
+    assert second_id.startswith("attention_is_all")
+    conn.close()
+
+
+def test_url_auto_detect():
+    from literature.scripts.lit import _is_arxiv_url
+    assert _is_arxiv_url("https://arxiv.org/abs/1706.03762") == "1706.03762"
+    assert _is_arxiv_url("https://arxiv.org/pdf/2301.00001.pdf") == "2301.00001"
+    assert _is_arxiv_url("not a url") is None
+    assert _is_arxiv_url("https://example.com/paper") is None
+
+
+def test_recommend_with_purpose_keywords(db):
+    add_paper(db, "p1", "Limit Order Book Simulation", year=2024,
+              abstract="LOB simulation using diffusion models", status="unread")
+    add_paper(db, "p2", "Cat Classification", year=2024,
+              abstract="Deep learning for cat photos", status="unread")
+    results = recommend(db, top_k=10, purpose_keywords=["limit", "order", "book", "simulation"])
+    assert results[0]["id"] == "p1"
+    assert results[0]["breakdown"]["relevance"] > results[1]["breakdown"]["relevance"]
+
+
+def test_stats_coverage(db):
+    add_paper(db, "p1", "Paper One", abstract="Has abstract", pdf_path="papers/p1.pdf")
+    add_paper(db, "p2", "Paper Two")
+    update_paper(db, "p1", summary_l4="One liner")
+    stats = get_stats(db)
+    assert stats["total"] == 2
+    assert stats["with_abstract"] == 1
+    assert stats["with_pdf"] == 1
+    assert stats["with_l4"] == 1
+    assert stats["with_l2"] == 0
+
+
+def test_pagerank_update_stored(db):
+    add_paper(db, "p1", "Paper One")
+    add_paper(db, "p2", "Paper Two")
+    add_citation(db, "p1", "p2")
+    update_pagerank(db)
+    p2 = get_paper(db, "p2")
+    assert p2["pagerank"] > 0
+
+
+def test_import_file(tmp_path):
+    from literature.scripts.lit import run
+    conn = init_db(tmp_path)
+    conn.close()
+
+    import_file = tmp_path / "papers.txt"
+    import_file.write_text("# Comment line\nhttps://arxiv.org/abs/1706.03762\n\n")
+
+    code = run(["import", str(import_file), "--no-pdf"], root=tmp_path)
+    assert code == 0
+    conn = init_db(tmp_path)
+    papers = list_papers(conn)
+    assert len(papers) >= 1
+    conn.close()

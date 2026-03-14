@@ -62,29 +62,30 @@ def funnel_retrieve(
     if depth < 2:
         return result
 
-    # Stage 2: Abstract for top-10
+    top_ids = [c["id"] for c in result["candidates"][:10]]
+    if top_ids:
+        placeholders = ",".join("?" for _ in top_ids)
+        rows = conn.execute(f"SELECT * FROM papers WHERE id IN ({placeholders})", top_ids).fetchall()
+        paper_cache = {dict(r)["id"]: dict(r) for r in rows}
+    else:
+        paper_cache = {}
+
     for c in result["candidates"][:10]:
-        p = conn.execute("SELECT * FROM papers WHERE id = ?", (c["id"],)).fetchone()
+        p = paper_cache.get(c["id"])
         if p:
-            p = dict(p)
             result["shortlist"].append({
-                "id": p["id"],
-                "title": p["title"],
-                "year": p["year"],
+                "id": p["id"], "title": p["title"], "year": p["year"],
                 "abstract": (p.get("abstract") or "")[:600],
             })
 
     if depth < 3:
         return result
 
-    # Stage 3: Key claims for top-3
     for c in result["candidates"][:3]:
-        p = conn.execute("SELECT * FROM papers WHERE id = ?", (c["id"],)).fetchone()
+        p = paper_cache.get(c["id"])
         if p:
-            p = dict(p)
             result["details"].append({
-                "id": p["id"],
-                "title": p["title"],
+                "id": p["id"], "title": p["title"],
                 "summary_l2": p.get("summary_l2", ""),
                 "notes": (p.get("notes") or "")[:500],
             })
@@ -92,15 +93,11 @@ def funnel_retrieve(
     if depth < 4:
         return result
 
-    # Stage 4: Full notes for top-1
     if result["candidates"]:
-        top = result["candidates"][0]
-        p = conn.execute("SELECT * FROM papers WHERE id = ?", (top["id"],)).fetchone()
+        p = paper_cache.get(result["candidates"][0]["id"])
         if p:
-            p = dict(p)
             result["deep"].append({
-                "id": p["id"],
-                "title": p["title"],
+                "id": p["id"], "title": p["title"],
                 "abstract": p.get("abstract", ""),
                 "notes": p.get("notes", ""),
                 "summary_l2": p.get("summary_l2", ""),

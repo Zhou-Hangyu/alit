@@ -93,6 +93,14 @@ def _cmd_add(args: argparse.Namespace, conn) -> int:
         if "url" not in kwargs:
             kwargs["url"] = f"https://arxiv.org/abs/{arxiv}"
 
+    if arxiv and not kwargs.get("abstract"):
+        from literature.scripts.db import _enrich_one_arxiv, _enrich_one_s2
+        enriched = _enrich_one_arxiv(arxiv) or _enrich_one_s2(arxiv)
+        if enriched:
+            if enriched.get("title") and title.startswith("arXiv:"):
+                title = enriched["title"]
+            kwargs.update({k: v for k, v in enriched.items() if v and k != "title"})
+
     paper = add_paper(conn, paper_id, title, **kwargs)
 
     db_path = Path(args._db_path) if hasattr(args, "_db_path") else Path.cwd()
@@ -479,6 +487,56 @@ def _cmd_purpose(args: argparse.Namespace, conn) -> int:
     return 0
 
 
+def _cmd_import(args: argparse.Namespace, conn) -> int:
+    import time
+    file_path = Path(args.file)
+    if not file_path.exists():
+        print(f"File not found: {file_path}", file=sys.stderr)
+        return 1
+
+    db_path = Path(args._db_path) if hasattr(args, "_db_path") else Path.cwd()
+    no_pdf = getattr(args, "no_pdf", False)
+    lines = [l.strip() for l in file_path.read_text().splitlines()]
+    urls = [l.split()[0] for l in lines if l and not l.startswith("#")]
+
+    added, skipped, errors = 0, 0, []
+    for i, url in enumerate(urls):
+        arxiv_id = _is_arxiv_url(url)
+        if not arxiv_id:
+            errors.append(f"{url}: not an arXiv URL, skipping")
+            continue
+
+        paper_id = f"arxiv_{arxiv_id.replace('.', '_')}"
+        if get_paper(conn, paper_id):
+            skipped += 1
+            continue
+
+        try:
+            from literature.scripts.db import _enrich_one_arxiv, _enrich_one_s2
+            meta = _enrich_one_arxiv(arxiv_id) or _enrich_one_s2(arxiv_id)
+            title = (meta or {}).get("title", f"arXiv:{arxiv_id}")
+            kwargs = {k: v for k, v in (meta or {}).items() if k != "title"}
+            kwargs["arxiv_id"] = arxiv_id
+            kwargs["url"] = f"https://arxiv.org/abs/{arxiv_id}"
+
+            add_paper(conn, paper_id, title, **kwargs)
+            if not no_pdf:
+                fetch_pdf_for_paper(conn, paper_id, db_path)
+
+            added += 1
+            year = kwargs.get("year", "?")
+            print(f"  [{i+1}/{len(urls)}] {paper_id} ({year})", flush=True)
+        except Exception as e:
+            errors.append(f"{arxiv_id}: {e}")
+
+        time.sleep(3)
+
+    print(f"\nImported {added}, skipped {skipped} existing, {len(errors)} errors", flush=True)
+    for e in errors:
+        print(f"  {e}")
+    return 0
+
+
 def _cmd_install_skill(args: argparse.Namespace) -> int:
     import shutil
 
@@ -607,6 +665,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("fetch-pdf", help="Download PDF for a paper")
     p.add_argument("id", help="Paper ID")
 
+    # import
+    p = sub.add_parser("import", help="Bulk-add papers from a file of arXiv URLs")
+    p.add_argument("file", help="Text file with one arXiv URL per line (# comments ignored)")
+    p.add_argument("--no-pdf", action="store_true", help="Skip PDF downloads")
+
     # install-skill
     sub.add_parser("install-skill", help="Install SKILL.md for agent integration")
 
@@ -635,6 +698,7 @@ HANDLERS = {
     "attach": _cmd_attach,
     "orphans": _cmd_orphans,
     "enrich": _cmd_enrich,
+    "import": _cmd_import,
 }
 
 
