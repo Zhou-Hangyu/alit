@@ -37,13 +37,24 @@ alit init                # creates .alit/ in your project
 alit install-skill       # teaches your agent the full workflow
 ```
 
-## Quick taste
+## Set your taste
+
+Tell alit what kind of research excites you. This drives recommendations — papers matching your taste rank higher.
+
+```bash
+alit taste "I'm into generative models for financial markets. Love papers that combine
+transformers with market microstructure. Prefer mathematical rigor over pure empirical
+benchmarks. Especially interested in order book simulation and agent-based models."
+```
+
+Change it anytime as your interests evolve. The reading queue reranks instantly.
+
+## Quick start
 
 ```bash
 alit add "https://arxiv.org/abs/1706.03762"     # fetches metadata + PDF
-alit add "https://arxiv.org/abs/1810.04805"     # add as many as you want
 alit import library.bib                          # or dump your Zotero/Mendeley
-alit recommend 5                                 # what should I read next?
+alit recommend 5                                 # ranked by your taste
 alit ask "What are the key attention mechanisms?" --depth 2
 ```
 
@@ -67,7 +78,7 @@ alit ask "What are the key attention mechanisms?" --depth 2
 | `alit cite <from> <to>` | Add citation edge |
 | `alit status <id> <s>` | Set reading status |
 | `alit tag <id> <tags>` | Set tags |
-| `alit purpose [text]` | Set or show research purpose |
+| `alit taste [text]` | Set or show your research taste |
 | `alit progress` | Visual progress dashboard |
 | `alit stats` | Collection overview |
 | `alit orphans` | Find citations to missing papers |

@@ -10,7 +10,7 @@ Data lives in `.alit/papers.db`. PDFs in `.alit/pdfs/`. Zero external dependenci
 ## Setup
 
 1. Run `alit init` to create the database.
-2. Run `alit purpose "your research goals"` to improve recommendation relevance.
+2. Run `alit taste "your research interests and what excites you"` to improve recommendations.
 
 ## Adding Papers
 
@@ -71,7 +71,7 @@ Data lives in `.alit/papers.db`. PDFs in `.alit/pdfs/`. Zero external dependenci
 | `alit cite <from> <to>` | Add citation edge with `--type` |
 | `alit status <id> <s>` | Set status: unread, skimmed, read, synthesized |
 | `alit tag <id> <tags>` | Set comma-separated tags |
-| `alit purpose [text]` | Set or show research purpose |
+| `alit taste [text]` | Set or show research taste |
 | `alit progress` | Visual progress dashboard |
 | `alit stats` | Collection overview |
 | `alit orphans` | List citations to missing papers |

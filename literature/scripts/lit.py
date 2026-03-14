@@ -427,7 +427,7 @@ def _cmd_stats(args: argparse.Namespace, conn) -> int:
             print(f"  ({stats['orphan_citations']} orphan)")
         else:
             print()
-        print(f"Purpose set:  {'yes' if stats['has_purpose'] else 'no'}")
+        print(f"Taste set:    {'yes' if stats['has_purpose'] else 'no'}")
         print("Status:")
         for st, cnt in sorted(stats["by_status"].items()):
             print(f"  {st:15s}: {cnt}")
@@ -551,18 +551,18 @@ def _cmd_fetch_pdf(args: argparse.Namespace, conn) -> int:
     return 0
 
 
-def _cmd_purpose(args: argparse.Namespace, conn) -> int:
+def _cmd_taste(args: argparse.Namespace, conn) -> int:
     text = getattr(args, "text", None)
     if not text:
         row = conn.execute("SELECT value FROM meta WHERE key='purpose'").fetchone()
         if row and row["value"]:
             print(row["value"])
         else:
-            print("No purpose set. Use: alit purpose \"your research goals here\"")
+            print("No taste set. Use: alit taste \"what kind of research excites you\"")
         return 0
     conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('purpose', ?)", (text,))
     conn.commit()
-    print(f"Purpose set ({len(text)} chars)")
+    print(f"Taste set ({len(text)} chars)")
     return 0
 
 
@@ -884,9 +884,9 @@ def _cmd_progress(args: argparse.Namespace, conn) -> int:
     else:
         print()
     if stats.get("has_purpose"):
-        print(f"  Purpose:    ✓ set")
+        print(f"  Taste:      ✓ set")
     else:
-        print(f"  Purpose:    ✗ not set (run: alit purpose \"your goals\")")
+        print(f"  Taste:      ✗ not set (run: alit taste \"what excites you\")")
     return 0
 
 
@@ -1000,9 +1000,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("delete", help="Remove a paper")
     p.add_argument("id", help="Paper ID")
 
-    # purpose
-    p = sub.add_parser("purpose", help="Set or show research purpose")
-    p.add_argument("text", nargs="?", default=None, help="Purpose text (omit to show current)")
+    # taste (alias: purpose)
+    p = sub.add_parser("taste", help="Set or show your research taste")
+    p.add_argument("text", nargs="?", default=None, help="What kind of research excites you (omit to show current)")
+    p = sub.add_parser("purpose", help=argparse.SUPPRESS)
+    p.add_argument("text", nargs="?", default=None)
 
     # attach
     p = sub.add_parser("attach", help="Attach a local PDF to a paper")
@@ -1067,7 +1069,8 @@ HANDLERS = {
     "stats": _cmd_stats,
     "delete": _cmd_delete,
     "export": _cmd_export,
-    "purpose": _cmd_purpose,
+    "taste": _cmd_taste,
+    "purpose": _cmd_taste,
     "fetch-pdf": _cmd_fetch_pdf,
     "attach": _cmd_attach,
     "orphans": _cmd_orphans,
