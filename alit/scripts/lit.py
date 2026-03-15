@@ -21,9 +21,9 @@ import sys
 import urllib.parse
 from pathlib import Path
 
-from alit.scripts.db import DB_NAME, add_citation, add_paper, attach_pdf
+from alit.scripts.db import DB_NAME, add_citation, add_paper, attach_dir, attach_pdf
 from alit.scripts.db import auto_cite_from_pdfs, delete_paper, enrich_papers
-from alit.scripts.db import fetch_pdf_for_paper, get_db
+from alit.scripts.db import fetch_all_pdfs, fetch_pdf_for_paper, get_db
 from alit.scripts.db import get_orphan_citations, get_paper, get_stats
 from alit.scripts.db import init_db, list_papers, update_paper
 
@@ -59,6 +59,8 @@ def _cmd_init(args: argparse.Namespace) -> int:
         return 0
     conn = init_db(target)
     conn.close()
+
+    (target / LIT_DIR / "pdfs").mkdir(parents=True, exist_ok=True)
 
     gitignore = target / ".gitignore"
     entry = ".alit/"
@@ -480,6 +482,17 @@ def _cmd_stats(args: argparse.Namespace, conn) -> int:
         print("Status:")
         for st, cnt in sorted(stats["by_status"].items()):
             print(f"  {st:15s}: {cnt}")
+
+        missing_pdfs = t - stats["with_pdf"]
+        missing_abstracts = t - stats["with_abstract"]
+        if missing_pdfs > 0 or missing_abstracts > 0 or not stats["has_taste"]:
+            print()
+            if missing_pdfs > 0:
+                print(f"  → {missing_pdfs} papers missing PDFs. Run: alit fetch-pdfs")
+            if missing_abstracts > 0:
+                print(f"  → {missing_abstracts} papers missing abstracts. Run: alit enrich")
+            if not stats["has_taste"]:
+                print(f"  → No taste set. Run: alit taste \"your research interests\"")
     return 0
 
 
@@ -569,7 +582,31 @@ def _cmd_orphans(args: argparse.Namespace, conn) -> int:
         print(f"{len(orphans)} citations reference papers not in the collection:\n")
         for o in orphans:
             print(f"  {o['from_id']} --[{o['type']}]--> {o['to_id']}  (MISSING)")
-        print(f"\nTo resolve: look up each missing paper and `lit add` it.")
+        print(f"\nTo resolve: look up each missing paper and `alit add` it.")
+    return 0
+
+
+def _cmd_fetch_pdfs(args: argparse.Namespace, conn) -> int:
+    db_path = Path(args._db_path) if hasattr(args, "_db_path") else Path.cwd()
+    result = fetch_all_pdfs(conn, db_path)
+    if result["downloaded"]:
+        print(f"(-o+) Downloaded {result['downloaded']}/{result['total']} PDFs")
+    else:
+        print(f"(-o-) No PDFs to download ({result['total']} candidates)")
+    if result.get("errors"):
+        for e in result["errors"][:5]:
+            print(f"  {e}")
+    return 0
+
+
+def _cmd_attach_dir(args: argparse.Namespace, conn) -> int:
+    db_path = Path(args._db_path) if hasattr(args, "_db_path") else Path.cwd()
+    dir_path = Path(args.path)
+    if not dir_path.is_dir():
+        print(f"(xox) Not a directory: {dir_path}", file=sys.stderr)
+        return 1
+    result = attach_dir(conn, dir_path, db_path)
+    print(f"(-o+) Attached {result['attached']} PDFs from {dir_path}")
     return 0
 
 
@@ -753,6 +790,9 @@ def _cmd_import(args: argparse.Namespace, conn) -> int:
             add_paper(conn, paper_id, entry_title, **entry_kwargs)
             added += 1
         print(f"(-o+) Imported {added} from JSON, skipped {skipped} existing", flush=True)
+        with_arxiv = conn.execute("SELECT COUNT(*) FROM papers WHERE arxiv_id != '' AND (pdf_path = '' OR pdf_path IS NULL)").fetchone()[0]
+        if with_arxiv > 0:
+            print(f"  → {with_arxiv} papers have arXiv IDs but no PDFs. Run: alit fetch-pdfs")
         return 0
 
     from alit.scripts.db import _enrich_batch_arxiv, _enrich_one_s2
@@ -1255,8 +1295,15 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("orphans", help="List citations pointing to papers not in collection")
 
     # fetch-pdf
-    p = sub.add_parser("fetch-pdf", help="Download PDF for a paper")
+    p = sub.add_parser("fetch-pdf", help="Download PDF for a single paper")
     p.add_argument("id", help="Paper ID")
+
+    # fetch-pdfs
+    sub.add_parser("fetch-pdfs", help="Batch-download PDFs for all papers missing them")
+
+    # attach-dir
+    p = sub.add_parser("attach-dir", help="Scan a directory and attach PDFs to matching papers")
+    p.add_argument("path", help="Directory containing PDF files")
 
     # import
     p = sub.add_parser("import", help="Bulk-add papers from URL file, BibTeX, or JSON")
@@ -1314,6 +1361,8 @@ HANDLERS = {
     "taste": _cmd_taste,
     "sync": _cmd_sync,
     "auto-cite": _cmd_auto_cite,
+    "fetch-pdfs": _cmd_fetch_pdfs,
+    "attach-dir": _cmd_attach_dir,
     "fetch-pdf": _cmd_fetch_pdf,
     "attach": _cmd_attach,
     "orphans": _cmd_orphans,

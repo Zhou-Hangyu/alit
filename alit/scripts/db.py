@@ -588,6 +588,63 @@ def auto_cite_from_pdfs(conn: sqlite3.Connection, db_path: Path) -> dict:
     return {"scanned": papers_scanned, "edges_added": edges_added, "missing": top_missing}
 
 
+def fetch_all_pdfs(conn: sqlite3.Connection, db_path: Path) -> dict:
+    """Download PDFs for all papers with arxiv_id but no pdf_path."""
+    import time
+    papers = conn.execute(
+        "SELECT id, arxiv_id FROM papers WHERE arxiv_id != '' AND (pdf_path = '' OR pdf_path IS NULL)"
+    ).fetchall()
+    if not papers:
+        return {"downloaded": 0, "total": 0, "errors": []}
+
+    downloaded = 0
+    errors = []
+    for i, row in enumerate(papers):
+        try:
+            result = fetch_pdf_for_paper(conn, row["id"], db_path)
+            if result:
+                downloaded += 1
+                print(f"  [{i + 1}/{len(papers)}] {row['id']}", flush=True)
+            else:
+                errors.append(f"{row['id']}: download failed")
+        except Exception as e:
+            errors.append(f"{row['id']}: {e}")
+        time.sleep(1)
+    return {"downloaded": downloaded, "total": len(papers), "errors": errors}
+
+
+def attach_dir(conn: sqlite3.Connection, dir_path: Path, db_path: Path) -> dict:
+    """Scan a directory for PDFs and attach them to matching papers by arXiv ID."""
+    import shutil
+    pdfs_dir = db_path / LIT_DIR / "pdfs"
+    pdfs_dir.mkdir(parents=True, exist_ok=True)
+
+    known = {}
+    for row in conn.execute("SELECT id, arxiv_id FROM papers WHERE arxiv_id != ''").fetchall():
+        clean = _clean_arxiv_id(row["arxiv_id"])
+        known[clean] = row["id"]
+        known[clean.replace(".", "_")] = row["id"]
+
+    attached = 0
+    for pdf in dir_path.glob("*.pdf"):
+        stem = pdf.stem.replace("v1", "").replace("v2", "").replace("v3", "")
+        paper_id = known.get(stem) or known.get(stem.replace(".", "_"))
+        if not paper_id:
+            continue
+        existing = get_paper(conn, paper_id)
+        if existing and existing.get("pdf_path"):
+            continue
+        filename = paper_id + ".pdf"
+        dest = pdfs_dir / filename
+        shutil.copy2(str(pdf), str(dest))
+        rel = f"pdfs/{filename}"
+        update_paper(conn, paper_id, pdf_path=rel)
+        attached += 1
+        print(f"  {paper_id} ← {pdf.name}", flush=True)
+
+    return {"attached": attached}
+
+
 _VALID_PAPER_FIELDS = frozenset({
     "id", "title", "authors", "year", "abstract", "url", "arxiv_id", "doi",
     "tags", "status", "notes", "summary_l4", "summary_l4_model", "summary_l4_at",
