@@ -626,6 +626,8 @@ def _cmd_export(args: argparse.Namespace, conn) -> int:
                 lines.append(f"  doi = {{{p['doi']}}},")
             if p.get("url"):
                 lines.append(f"  url = {{{p['url']}}},")
+            if p.get("venue"):
+                lines.append(f"  journal = {{{_bib_escape(p['venue'])}}},")
             if p.get("arxiv_id"):
                 lines.append(f"  eprint = {{{p['arxiv_id']}}},")
                 lines.append("  archiveprefix = {arXiv},")
@@ -754,7 +756,37 @@ def _cmd_sync(args: argparse.Namespace, conn) -> int:
 
     args.file = str(bib_path)
     args.bib = True
-    return _cmd_import(args, conn)
+    result = _cmd_import(args, conn)
+
+    # Auto-regenerate library.bib after sync
+    from alit.scripts.db import LIT_DIR
+    lib_bib = Path.cwd() / LIT_DIR / "library.bib"
+    if lib_bib.exists():
+        papers = [dict(r) for r in conn.execute("SELECT * FROM papers ORDER BY year DESC").fetchall()]
+        entries = []
+        for p in papers:
+            key = p["id"].replace("/", "_").replace(":", "_").replace(" ", "_")
+            bib_lines = [f"@article{{{key},"]
+            bib_lines.append(f"  title = {{{_bib_escape(p['title'])}}},")
+            if p.get("authors"):
+                bib_lines.append(f"  author = {{{_authors_to_bib(p['authors'])}}},")
+            if p.get("year"):
+                bib_lines.append(f"  year = {{{p['year']}}},")
+            if p.get("venue"):
+                bib_lines.append(f"  journal = {{{_bib_escape(p['venue'])}}},")
+            if p.get("doi"):
+                bib_lines.append(f"  doi = {{{p['doi']}}},")
+            if p.get("url"):
+                bib_lines.append(f"  url = {{{p['url']}}},")
+            if p.get("arxiv_id"):
+                bib_lines.append(f"  eprint = {{{p['arxiv_id']}}},")
+                bib_lines.append("  archiveprefix = {arXiv},")
+            bib_lines.append("}")
+            entries.append("\n".join(bib_lines))
+        lib_bib.write_text("\n\n".join(entries) + "\n")
+        print(f"(-o+) Updated {lib_bib}")
+
+    return result
 
 
 def _cmd_taste(args: argparse.Namespace, conn) -> int:
@@ -807,6 +839,9 @@ def _import_bibtex(args: argparse.Namespace, conn, file_path: Path) -> int:
             kwargs["doi"] = entry["doi"]
         if entry.get("url"):
             kwargs["url"] = entry["url"]
+        venue = entry.get("journal") or entry.get("booktitle") or ""
+        if venue:
+            kwargs["venue"] = venue
 
         arxiv_id = entry.get("eprint", "")
         if not arxiv_id:

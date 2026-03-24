@@ -13,7 +13,7 @@ from pathlib import Path
 
 LIT_DIR = ".alit"
 DB_NAME = "papers.db"
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 _migrated_dbs: set[str] = set()
 
 
@@ -160,6 +160,7 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
         ("summary_l2", "TEXT DEFAULT ''"),
         ("summary_l2_model", "TEXT DEFAULT ''"),
         ("summary_l2_at", "TEXT DEFAULT ''"),
+        ("venue", "TEXT DEFAULT ''"),
     ]
     for col, typedef in new_columns:
         if col not in existing:
@@ -649,6 +650,7 @@ _VALID_PAPER_FIELDS = frozenset({
     "id", "title", "authors", "year", "abstract", "url", "arxiv_id", "doi",
     "tags", "status", "notes", "summary_l4", "summary_l4_model", "summary_l4_at",
     "summary_l2", "summary_l2_model", "summary_l2_at", "pdf_path", "pagerank",
+    "venue",
 })
 
 
