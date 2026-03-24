@@ -611,7 +611,7 @@ def test_import_bib(tmp_path):
     paper = get_paper(conn, "smith2020paper")
     assert paper is not None
     assert paper["title"] == "A Test Paper on Neural Networks"
-    assert paper["authors"] == "Smith, John and Doe, Jane"
+    assert paper["authors"] == "Smith, John; Doe, Jane"
     assert paper["year"] == 2020
     conn.close()
 

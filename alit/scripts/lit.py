@@ -506,6 +506,65 @@ def _cmd_delete(args: argparse.Namespace, conn) -> int:
         return 1
 
 
+_BIB_SPECIAL = str.maketrans({"&": r"\&", "%": r"\%", "#": r"\#"})
+
+
+def _bib_escape(text: str) -> str:
+    """Escape BibTeX/LaTeX special characters in text."""
+    return text.translate(_BIB_SPECIAL)
+
+
+def _authors_to_bib(authors_db: str) -> str:
+    """Convert DB author string to BibTeX author field.
+
+    DB stores authors in mixed formats:
+      - 'First Last, First Last'          (comma-separated)
+      - 'Last, First; Last, First'         (semicolon-separated)
+      - 'First Last et al.'                (et al. shorthand)
+    Each name is wrapped in {braces} so BibTeX treats it as a literal,
+    avoiding misparse of compound/unicode names.
+    """
+    s = authors_db.strip()
+    if not s:
+        return ""
+    # Semicolon-separated: split on ';'
+    if ";" in s:
+        names = [n.strip() for n in s.split(";") if n.strip()]
+    # 'et al' without separator: keep as single unit
+    elif re.match(r"^[^,]+\bet al\.?$", s):
+        return "{" + _bib_escape(s) + "}"
+    # Comma-separated 'First Last, First Last':
+    # Heuristic: if commas present and no name part looks like 'Last, First'
+    # (i.e., parts between commas each have >=2 words), treat as comma-separated list.
+    # Otherwise it might be a single 'Last, First' name — keep as-is.
+    elif "," in s:
+        parts = [p.strip() for p in s.split(",") if p.strip()]
+        # Single comma with exactly 2 parts where first part is one word:
+        # likely 'Last, First' format — keep as single name
+        if len(parts) == 2 and len(parts[0].split()) == 1:
+            return "{" + _bib_escape(s) + "}"
+        names = parts
+    else:
+        return "{" + _bib_escape(s) + "}"
+    # Filter out empty, wrap each, join with ' and '
+    return " and ".join("{" + _bib_escape(n) + "}" for n in names if n)
+
+
+def _bib_authors_to_db(authors_bib: str) -> str:
+    """Convert BibTeX author field back to DB format.
+
+    Detects whether names contain internal commas (Last, First style)
+    and uses semicolon separator to avoid ambiguity. Otherwise uses commas.
+    """
+    if not authors_bib:
+        return ""
+    names = [n.strip().strip("{}") for n in authors_bib.split(" and ")]
+    # If any name contains a comma, it's 'Last, First' style — use '; ' separator
+    if any("," in n for n in names):
+        return "; ".join(names)
+    return ", ".join(names)
+
+
 def _cmd_export(args: argparse.Namespace, conn) -> int:
     fmt = getattr(args, "format", "json") or "json"
 
@@ -558,11 +617,9 @@ def _cmd_export(args: argparse.Namespace, conn) -> int:
         for p in papers:
             key = p["id"].replace("/", "_").replace(":", "_").replace(" ", "_")
             lines = [f"@article{{{key},"]
-            lines.append(f"  title = {{{p['title']}}},")
+            lines.append(f"  title = {{{_bib_escape(p['title'])}}},")
             if p.get("authors"):
-                authors_bib = " and ".join(a.strip() for a in p["authors"].split(","))
-                lines.append(f"  author = {{{authors_bib}}},")
-
+                lines.append(f"  author = {{{_authors_to_bib(p['authors'])}}},")
             if p.get("year"):
                 lines.append(f"  year = {{{p['year']}}},")
             if p.get("doi"):
@@ -743,7 +800,7 @@ def _import_bibtex(args: argparse.Namespace, conn, file_path: Path) -> int:
             except ValueError:
                 pass
         if entry.get("author"):
-            kwargs["authors"] = entry["author"]
+            kwargs["authors"] = _bib_authors_to_db(entry["author"])
         if entry.get("abstract"):
             kwargs["abstract"] = entry["abstract"]
         if entry.get("doi"):
