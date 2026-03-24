@@ -556,12 +556,13 @@ def _cmd_export(args: argparse.Namespace, conn) -> int:
         papers = [dict(r) for r in conn.execute("SELECT * FROM papers ORDER BY year DESC").fetchall()]
         entries = []
         for p in papers:
-            key = p.get("arxiv_id") or p.get("doi") or p["id"]
-            key = key.replace("/", "_").replace(":", "_").replace(" ", "_")
+            key = p["id"].replace("/", "_").replace(":", "_").replace(" ", "_")
             lines = [f"@article{{{key},"]
             lines.append(f"  title = {{{p['title']}}},")
             if p.get("authors"):
-                lines.append(f"  author = {{{p['authors']}}},")
+                authors_bib = " and ".join(a.strip() for a in p["authors"].split(","))
+                lines.append(f"  author = {{{authors_bib}}},")
+
             if p.get("year"):
                 lines.append(f"  year = {{{p['year']}}},")
             if p.get("doi"):
