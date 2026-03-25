@@ -286,7 +286,7 @@ def _enrich_one_s2(arxiv_id: str) -> dict | None:
     """Fetch metadata for one paper from Semantic Scholar API (no API key needed)."""
     import json as _json
     clean_id = _clean_arxiv_id(arxiv_id)
-    url = f"https://api.semanticscholar.org/graph/v1/paper/ArXiv:{clean_id}?fields=title,abstract,year,authors,externalIds,url"
+    url = f"https://api.semanticscholar.org/graph/v1/paper/ArXiv:{clean_id}?fields=title,abstract,year,authors,externalIds,url,venue"
 
     try:
         data = _json.loads(_fetch_url(url).decode("utf-8"))
@@ -306,6 +306,8 @@ def _enrich_one_s2(arxiv_id: str) -> dict | None:
         result["title"] = data["title"]
     if data.get("year"):
         result["year"] = data["year"]
+    if data.get("venue"):
+        result["venue"] = data["venue"]
     ext = data.get("externalIds") or {}
     if ext.get("DOI"):
         result["doi"] = ext["DOI"]
@@ -424,7 +426,7 @@ def enrich_papers(conn: sqlite3.Connection, db_path: Path, *, fetch_pdfs: bool =
         try:
             import json as _json
             encoded = urllib.parse.quote(row["title"])
-            s2_url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={encoded}&limit=1&fields=title,abstract,year,authors,externalIds,url"
+            s2_url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={encoded}&limit=1&fields=title,abstract,year,authors,externalIds,url,venue"
             data = _json.loads(_fetch_url(s2_url).decode("utf-8"))
             results = data.get("data", [])
             if not results:
@@ -446,6 +448,8 @@ def enrich_papers(conn: sqlite3.Connection, db_path: Path, *, fetch_pdfs: bool =
                 meta["arxiv_id"] = ext["ArXiv"]
             if ext.get("DOI"):
                 meta["doi"] = ext["DOI"]
+            if top.get("venue"):
+                meta["venue"] = top["venue"]
             update_paper(conn, row["id"], **meta)
             enriched += 1
             print(f"  [{enriched}] {row['id']} (via title search)", flush=True)
@@ -661,6 +665,16 @@ def _sanitize_id(raw: str) -> str:
 def add_paper(conn: sqlite3.Connection, id: str, title: str, **kwargs) -> dict:
     """Insert a paper, or update fields if it already exists. Never loses existing data."""
     id = _sanitize_id(id)
+
+    # Warn on truncated author lists
+    authors = kwargs.get("authors", "")
+    if authors and re.search(r"\bet al\.?\s*$", authors):
+        import warnings
+        warnings.warn(
+            f"Paper '{id}' has truncated authors ('{authors[:40]}...'). "
+            "Consider providing the full author list.",
+            stacklevel=2,
+        )
 
     arxiv_id = kwargs.get("arxiv_id", "")
     if arxiv_id:

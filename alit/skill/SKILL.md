@@ -1,6 +1,6 @@
 ---
 name: alit
-version: "0.5.0"
+version: "0.6.0"
 description: "Persistent knowledge base for literature review. Use when the user wants to review academic papers, find what to read next, build on prior reading sessions, or answer research questions from collected papers. Handles arXiv URLs, BibTeX import, citation graphs, and reading recommendations. Do not use for non-academic documents, note-taking, or reference formatting."
 ---
 
@@ -88,10 +88,27 @@ Follow this order. Do not skip steps or mix phases.
 | `alit orphans` | List citations to missing papers |
 | `alit attach <id> <pdf>` | Attach local PDF |
 | `alit fetch-pdf <id>` | Download PDF from arXiv |
+| `alit fetch-pdfs` | Batch-download all missing PDFs |
+| `alit attach-dir <path>` | Scan directory and attach PDFs by arXiv ID |
 | `alit delete <id>` | Remove paper + citations |
-| `alit export [--format X]` | Export as JSON or markdown |
+| `alit export [--format X]` | Export as JSON, markdown, or bib |
+| `alit lint` | Check collection for data quality issues |
+| `alit dedup` | Find and merge duplicate papers |
 
 All commands support `--json` for machine-readable output.
+
+## Quality Assurance
+
+Run `alit lint` after bulk operations to catch issues early:
+- Truncated authors ("et al.")
+- Missing locators (no url, doi, or arxiv_id)
+- Empty venues, missing abstracts or PDFs
+- Non-ASCII characters that may break pdflatex
+
+The bib export (`alit export --format bib`) auto-handles:
+- Unicode→LaTeX escaping (é → {\'e}) for pdflatex compatibility
+- Entry type detection: `@inproceedings` for conferences, `@article` for journals
+- Venue field: uses `booktitle` for conferences, `journal` for journals
 
 ## Conventions
 
@@ -101,4 +118,5 @@ All commands support `--json` for machine-readable output.
 - **Citation types**: cites, extends, contradicts, uses_method, uses_dataset, surveys.
 - **Provenance**: always pass `--model` when summarizing.
 - **PDFs**: stored in `.alit/pdfs/`, auto-downloaded for arXiv papers.
+- **Venue**: auto-populated from Semantic Scholar during `enrich`. Used for BibTeX entry type.
 - **Check before adding**: `alit show <arxiv_id>` to avoid redundant work.

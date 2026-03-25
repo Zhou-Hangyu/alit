@@ -508,10 +508,54 @@ def _cmd_delete(args: argparse.Namespace, conn) -> int:
 
 _BIB_SPECIAL = str.maketrans({"&": r"\&", "%": r"\%", "#": r"\#"})
 
+# Unicode → LaTeX macro mapping for pdflatex compatibility.
+_UNICODE_TO_LATEX: dict[str, str] = {
+    "à": r"{\`a}", "á": r"{\'a}", "â": r"{\^a}", "ã": r"{\~a}", "ä": r'{\"a}', "å": r"{\aa}",
+    "è": r"{\`e}", "é": r"{\'e}", "ê": r"{\^e}", "ë": r'{\"e}',
+    "ì": r"{\`i}", "í": r"{\'i}", "î": r"{\^i}", "ï": r'{\"i}',
+    "ò": r"{\`o}", "ó": r"{\'o}", "ô": r"{\^o}", "õ": r"{\~o}", "ö": r'{\"o}',
+    "ù": r"{\`u}", "ú": r"{\'u}", "û": r"{\^u}", "ü": r'{\"u}',
+    "ý": r"{\'y}", "ÿ": r'{\"y}',
+    "ñ": r"{\~n}", "ć": r"{\'c}", "č": r"{\v{c}}", "š": r"{\v{s}}", "ž": r"{\v{z}}",
+    "ł": r"{\l}", "ß": r"{\ss}",
+    "À": r"{\`A}", "Á": r"{\'A}", "Â": r"{\^A}", "Ã": r"{\~A}", "Ä": r'{\"A}',
+    "È": r"{\`E}", "É": r"{\'E}", "Ê": r"{\^E}", "Ë": r'{\"E}',
+    "Ì": r"{\`I}", "Í": r"{\'I}", "Î": r"{\^I}", "Ï": r'{\"I}',
+    "Ò": r"{\`O}", "Ó": r"{\'O}", "Ô": r"{\^O}", "Õ": r"{\~O}", "Ö": r'{\"O}',
+    "Ù": r"{\`U}", "Ú": r"{\'U}", "Û": r"{\^U}", "Ü": r'{\"U}',
+    "Ý": r"{\'Y}", "Ñ": r"{\~N}", "Ć": r"{\'C}", "Č": r"{\v{C}}", "Š": r"{\v{S}}",
+    "Ł": r"{\L}",
+}
+_UNICODE_TRANS = str.maketrans(_UNICODE_TO_LATEX)
+
 
 def _bib_escape(text: str) -> str:
-    """Escape BibTeX/LaTeX special characters in text."""
-    return text.translate(_BIB_SPECIAL)
+    """Escape BibTeX/LaTeX special characters and non-ASCII in text."""
+    return text.translate(_BIB_SPECIAL).translate(_UNICODE_TRANS)
+
+
+_CONFERENCE_KEYWORDS = {
+    "iclr", "neurips", "nips", "icml", "cvpr", "iccv", "eccv", "aaai", "ijcai",
+    "acl", "emnlp", "naacl", "coling", "sigir", "kdd", "www", "uai", "aistats",
+    "colt", "focs", "stoc", "soda", "isit", "interspeech", "icassp", "miccai",
+    "wacv", "bmvc", "siggraph", "chi", "uist", "vldb", "sigmod", "icde",
+    "conference", "proceedings", "workshop", "symposium",
+}
+
+
+def _bib_entry_type(venue: str) -> tuple[str, str]:
+    """Determine BibTeX entry type from venue string.
+
+    Returns (entry_type, venue_field_name) — e.g. ("inproceedings", "booktitle")
+    or ("article", "journal").
+    """
+    if not venue:
+        return "article", "journal"
+    venue_lower = venue.lower()
+    words = set(re.split(r"[\s/()]+", venue_lower))
+    if words & _CONFERENCE_KEYWORDS:
+        return "inproceedings", "booktitle"
+    return "article", "journal"
 
 
 def _authors_to_bib(authors_db: str) -> str:
@@ -616,7 +660,8 @@ def _cmd_export(args: argparse.Namespace, conn) -> int:
         entries = []
         for p in papers:
             key = p["id"].replace("/", "_").replace(":", "_").replace(" ", "_")
-            lines = [f"@article{{{key},"]
+            entry_type, venue_field = _bib_entry_type(p.get("venue", ""))
+            lines = [f"@{entry_type}{{{key},"]
             lines.append(f"  title = {{{_bib_escape(p['title'])}}},")
             if p.get("authors"):
                 lines.append(f"  author = {{{_authors_to_bib(p['authors'])}}},")
@@ -627,7 +672,7 @@ def _cmd_export(args: argparse.Namespace, conn) -> int:
             if p.get("url"):
                 lines.append(f"  url = {{{p['url']}}},")
             if p.get("venue"):
-                lines.append(f"  journal = {{{_bib_escape(p['venue'])}}},")
+                lines.append(f"  {venue_field} = {{{_bib_escape(p['venue'])}}},")
             if p.get("arxiv_id"):
                 lines.append(f"  eprint = {{{p['arxiv_id']}}},")
                 lines.append("  archiveprefix = {arXiv},")
@@ -638,6 +683,59 @@ def _cmd_export(args: argparse.Namespace, conn) -> int:
 
     print(f"Unknown format: {fmt}. Use --format json, --format markdown, or --format bib", file=sys.stderr)
     return 1
+
+
+def _cmd_lint(args: argparse.Namespace, conn) -> int:
+    """Check the collection for data quality issues."""
+    papers = [dict(r) for r in conn.execute("SELECT * FROM papers").fetchall()]
+    issues: list[str] = []
+    warnings: list[str] = []
+
+    for p in papers:
+        pid = p["id"]
+        # Truncated authors
+        if p.get("authors") and re.search(r"\bet al\.?\s*$", p["authors"]):
+            issues.append(f"  [AUTHOR] {pid}: truncated author list ('{p['authors'][:40]}...')")
+        # Missing authors
+        if not p.get("authors"):
+            warnings.append(f"  [AUTHOR] {pid}: no authors")
+        # No locator
+        has_locator = any(p.get(f) for f in ("url", "doi", "arxiv_id"))
+        if not has_locator:
+            warnings.append(f"  [LOCATOR] {pid}: no url, doi, or arxiv_id")
+        # Missing abstract
+        if not p.get("abstract"):
+            warnings.append(f"  [ABSTRACT] {pid}: no abstract")
+        # Empty venue
+        if not p.get("venue"):
+            warnings.append(f"  [VENUE] {pid}: no venue")
+        # Non-ASCII in authors (pdflatex risk)
+        if p.get("authors") and any(ord(c) > 127 for c in p["authors"]):
+            chars = sorted(set(c for c in p["authors"] if ord(c) > 127))
+            warnings.append(f"  [UNICODE] {pid}: non-ASCII in authors: {''.join(chars)}")
+        # Missing PDF
+        if not p.get("pdf_path"):
+            warnings.append(f"  [PDF] {pid}: no PDF attached")
+
+    # Print report
+    total = len(papers)
+    n_issues = len(issues)
+    n_warnings = len(warnings)
+
+    if issues:
+        print(f"\nErrors ({n_issues}):")
+        for line in sorted(issues):
+            print(line)
+
+    if warnings and not getattr(args, "errors_only", False):
+        print(f"\nWarnings ({n_warnings}):")
+        for line in sorted(warnings):
+            print(line)
+
+    print(f"\nSummary: {total} papers, {n_issues} errors, {n_warnings} warnings")
+    if n_issues == 0 and n_warnings == 0:
+        print("Collection is clean!")
+    return 1 if n_issues > 0 else 0
 
 
 def _cmd_attach(args: argparse.Namespace, conn) -> int:
@@ -1457,6 +1555,11 @@ def _build_parser() -> argparse.ArgumentParser:
     # progress
     sub.add_parser("progress", help="Visual progress dashboard")
 
+    # lint
+    p = sub.add_parser("lint", help="Check collection for data quality issues")
+    p.add_argument("--errors-only", action="store_true", dest="errors_only",
+                   help="Only show errors, suppress warnings")
+
     # dedup
     p = sub.add_parser("dedup", help="Find and merge duplicate papers")
     p.add_argument("--merge", action="store_true", help="Auto-merge duplicates (keeps richest record)")
@@ -1499,6 +1602,7 @@ HANDLERS = {
     "find": _cmd_find,
     "read": _cmd_read,
     "progress": _cmd_progress,
+    "lint": _cmd_lint,
     "dedup": _cmd_dedup,
 }
 
