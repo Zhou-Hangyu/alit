@@ -759,6 +759,26 @@ def test_summarize_allowed_with_pdf(tmp_path):
     assert code == 0
 
 
+def test_summarize_warns_abstract_overlap(tmp_path):
+    """Summarize should warn when L4 summary is too similar to abstract."""
+    import io
+    from unittest.mock import patch
+    from alit.scripts.lit import run
+
+    abstract = "This paper proposes a novel method for image classification using transformers"
+    conn = init_db(tmp_path)
+    add_paper(conn, "p1", "Test Paper")
+    update_paper(conn, "p1", pdf_path="pdfs/test.pdf", abstract=abstract)
+    conn.close()
+
+    err = io.StringIO()
+    with patch("sys.stderr", err), patch("sys.stdout", io.StringIO()):
+        # Summary that mostly copies the abstract
+        code = run(["summarize", "p1", "--l4", abstract, "--model", "test"], root=tmp_path)
+    assert code == 0  # warning only, not a block
+    assert "similar to abstract" in err.getvalue()
+
+
 def test_status_blocked_without_pdf(tmp_path):
     """Status change to read/skimmed should fail without PDF (unless --force)."""
     import io

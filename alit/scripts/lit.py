@@ -344,6 +344,17 @@ def _cmd_summarize(args: argparse.Namespace, conn) -> int:
         print("Error: provide --l4 or --l2", file=sys.stderr)
         return 1
 
+    # Warn if summary looks like it's just restating the abstract
+    abstract = (paper.get("abstract") or "").lower().split()
+    if l4 and abstract:
+        summary_words = set(l4.lower().split())
+        abstract_words = set(abstract)
+        if abstract_words and summary_words:
+            overlap = len(summary_words & abstract_words) / max(len(summary_words), 1)
+            if overlap > 0.8:
+                print(f"⚠ Summary for {args.id} looks very similar to abstract ({overlap:.0%} word overlap).", file=sys.stderr)
+                print(f"  Good summaries include details only found in the paper body.", file=sys.stderr)
+
     paper = update_paper(conn, args.id, **kwargs)
     if getattr(args, "json", False):
         print(json.dumps(paper, ensure_ascii=False))

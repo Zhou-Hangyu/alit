@@ -36,18 +36,22 @@ Follow this order. Do not skip steps or mix phases.
 1. Run `alit recommend 5` to pick what to read next. Papers with PDFs are marked 📄.
 2. **Pick a paper that has a PDF.** If the top recommendation has no PDF, either run `alit fetch-pdf <id>` or skip to the next paper that does.
 3. Run `alit read <id>` to see the paper's details. Confirm a PDF path is shown.
-4. Read the full PDF at `.alit/pdfs/<filename>.pdf`. Base all notes and summaries on the full paper content.
-5. After reading the full paper, store findings in this order:
+4. **Read the full PDF** using the Read tool on `.alit/pdfs/<filename>.pdf`. You MUST actually open and read the PDF file — do not skip this step.
+5. Write notes and summaries **based on PDF content only**. Your L4 summary must reflect the paper's methods, results, and contributions — not just restate the abstract. Your L2 claims must reference specific findings, theorems, or experiments from the paper body.
+6. After reading the full paper, store findings in this order:
    - `alit status <id> read`
-   - `alit note <id> "key observations..."`
+   - `alit note <id> "key observations from the full paper..."` — mention specific sections, figures, tables, or results
    - `alit summarize <id> --l4 "one sentence summary" --model "<model-name>"`
    - `alit summarize <id> --l2 '["claim 1", "claim 2"]' --model "<model-name>"`
-6. Always pass `--model` when summarizing.
+7. Always pass `--model` when summarizing.
+
+**Self-check before summarizing:** If your summary could have been written from the abstract alone, you have not read the paper. Go back and read the PDF. A good summary includes details only found in the paper body (e.g., specific numbers, method details, ablation results, limitations discussed in later sections).
 
 **Do not:**
 - Mark a paper as `read` or `skimmed` based only on its abstract.
-- Write L4/L2 summaries without reading the full PDF.
+- Write L4/L2 summaries without reading the full PDF. The CLI will block this.
 - Bulk-summarize papers that lack PDFs. Fetch PDFs first or skip them.
+- Restate the abstract as a summary. Summaries must add value beyond the abstract.
 
 ### Phase 3: Verify citations
 
