@@ -1,6 +1,6 @@
 ---
 name: alit
-version: "0.6.1"
+version: "0.6.2"
 description: "Persistent knowledge base for literature review. Use when the user wants to review academic papers, find what to read next, build on prior reading sessions, or answer research questions from collected papers. Handles arXiv URLs, BibTeX import, citation graphs, and reading recommendations. Do not use for non-academic documents, note-taking, or reference formatting."
 ---
 
@@ -106,6 +106,7 @@ Follow this order. Do not skip steps or mix phases.
 | `alit export [--format X]` | Export as JSON, markdown, or bib |
 | `alit lint` | Check collection for data quality issues |
 | `alit dedup` | Find and merge duplicate papers |
+| `alit scrub` | Reset abstract-based summaries (dry run; `--apply` to execute) |
 
 All commands support `--json` for machine-readable output.
 

@@ -1353,6 +1353,89 @@ def _cmd_dedup(args: argparse.Namespace, conn) -> int:
     return 0
 
 
+def _word_overlap(text_a: str, text_b: str) -> float:
+    """Return fraction of words in text_a that also appear in text_b."""
+    words_a = set(text_a.lower().split())
+    words_b = set(text_b.lower().split())
+    if not words_a:
+        return 0.0
+    return len(words_a & words_b) / len(words_a)
+
+
+def _cmd_scrub(args: argparse.Namespace, conn) -> int:
+    """Reset summaries that were likely written from abstracts, not PDFs.
+
+    Catches two cases:
+    1. Papers with no PDF — summaries couldn't have come from reading.
+    2. Papers where L4 summary has high word overlap with abstract —
+       agent probably just restated the abstract from `alit read` output.
+    """
+    dry_run = not getattr(args, "apply", False)
+    threshold = float(getattr(args, "threshold", 0.7) or 0.7)
+
+    rows = conn.execute(
+        "SELECT id, title, status, summary_l4, summary_l2, abstract, pdf_path "
+        "FROM papers "
+        "WHERE summary_l4 != '' AND summary_l4 IS NOT NULL "
+        "   OR summary_l2 != '' AND summary_l2 IS NOT NULL "
+        "   OR status IN ('skimmed', 'read', 'synthesized')"
+    ).fetchall()
+
+    to_scrub = []
+    for r in rows:
+        has_pdf = bool(r["pdf_path"])
+        reason = None
+
+        if not has_pdf:
+            reason = "no PDF"
+        elif r["summary_l4"] and r["abstract"]:
+            overlap = _word_overlap(r["summary_l4"], r["abstract"])
+            if overlap > threshold:
+                reason = f"L4 ≈ abstract ({overlap:.0%} overlap)"
+
+        if reason:
+            to_scrub.append((r, reason))
+
+    if not to_scrub:
+        print("(-o-) Nothing to scrub — all summaries look like they came from full paper reading.")
+        return 0
+
+    action = "Would reset" if dry_run else "Resetting"
+    no_pdf = sum(1 for _, reason in to_scrub if reason == "no PDF")
+    abstract_copy = len(to_scrub) - no_pdf
+    print(f"{action} {len(to_scrub)} paper(s): {no_pdf} without PDF, {abstract_copy} with abstract-like summaries\n")
+
+    for r, reason in to_scrub:
+        flags = []
+        if r["summary_l4"]:
+            flags.append("L4")
+        if r["summary_l2"]:
+            flags.append("L2")
+        if r["status"] in ("skimmed", "read", "synthesized"):
+            flags.append(f"status={r['status']}")
+        print(f"  {r['id']}: {(r['title'] or '')[:50]}  [{', '.join(flags)}] — {reason}")
+
+        if not dry_run:
+            update_paper(
+                conn, r["id"],
+                summary_l4="",
+                summary_l4_model="",
+                summary_l4_at="",
+                summary_l2="",
+                summary_l2_model="",
+                summary_l2_at="",
+                status="unread",
+            )
+
+    if dry_run:
+        print(f"\nDry run. To apply: alit scrub --apply")
+        print(f"Adjust sensitivity: alit scrub --threshold 0.5 (lower = stricter)")
+    else:
+        print(f"\n(-o+) Scrubbed {len(to_scrub)} paper(s). Summaries cleared, status reset to unread.")
+        print(f"These papers are now ready for proper reading from their PDFs.")
+    return 0
+
+
 def _cmd_install_skill(args: argparse.Namespace) -> int:
     import shutil
 
@@ -1594,6 +1677,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("dedup", help="Find and merge duplicate papers")
     p.add_argument("--merge", action="store_true", help="Auto-merge duplicates (keeps richest record)")
 
+    # scrub
+    p = sub.add_parser("scrub", help="Reset abstract-based summaries (no-PDF or high overlap)")
+    p.add_argument("--apply", action="store_true", help="Actually reset (default is dry run)")
+    p.add_argument("--threshold", type=float, default=0.7,
+                   help="Word overlap threshold for flagging abstract-like summaries (default: 0.7)")
+
     # install-skill
     p = sub.add_parser("install-skill", help="Install SKILL.md for agent integration")
     p.add_argument("--global", action="store_true", dest="global_install",
@@ -1634,6 +1723,7 @@ HANDLERS = {
     "progress": _cmd_progress,
     "lint": _cmd_lint,
     "dedup": _cmd_dedup,
+    "scrub": _cmd_scrub,
 }
 
 

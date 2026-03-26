@@ -1,6 +1,6 @@
 [project]
 name = "agent-lit"
-version = "0.6.1"
+version = "0.6.2"
 description = "Persistent memory for AI agents doing literature review with your taste."
 readme = "README.md"
 license = "MIT"

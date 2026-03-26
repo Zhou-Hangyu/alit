@@ -824,6 +824,62 @@ def test_summarize_l2_backward_compat_json(tmp_path):
     conn.close()
 
 
+def test_scrub_dry_run(tmp_path):
+    """Scrub should flag papers without PDFs and abstract-like summaries."""
+    import io
+    from unittest.mock import patch
+    from alit.scripts.lit import run
+
+    conn = init_db(tmp_path)
+    # Paper with no PDF but has summary — should be flagged
+    add_paper(conn, "no_pdf", "No PDF Paper")
+    update_paper(conn, "no_pdf", summary_l4="some summary", status="read")
+    # Paper with PDF and abstract-copy summary — should be flagged
+    abstract = "a novel method for image classification using deep transformers"
+    add_paper(conn, "abstract_copy", "Abstract Copy Paper")
+    update_paper(conn, "abstract_copy", pdf_path="pdfs/test.pdf",
+                 abstract=abstract, summary_l4=abstract, status="read")
+    # Paper with PDF and genuine summary — should NOT be flagged
+    add_paper(conn, "good", "Good Paper")
+    update_paper(conn, "good", pdf_path="pdfs/good.pdf",
+                 abstract="about cats", summary_l4="totally different content about dogs", status="read")
+    conn.close()
+
+    output = io.StringIO()
+    with patch("sys.stdout", output):
+        code = run(["scrub"], root=tmp_path)
+    assert code == 0
+    text = output.getvalue()
+    assert "no_pdf" in text
+    assert "abstract_copy" in text
+    assert "good" not in text
+    assert "Dry run" in text
+
+
+def test_scrub_apply(tmp_path):
+    """Scrub --apply should actually reset summaries."""
+    import io
+    from unittest.mock import patch
+    from alit.scripts.lit import run
+
+    conn = init_db(tmp_path)
+    add_paper(conn, "p1", "Test Paper")
+    update_paper(conn, "p1", summary_l4="bad summary", summary_l2='["claim"]', status="read")
+    conn.close()
+
+    output = io.StringIO()
+    with patch("sys.stdout", output):
+        code = run(["scrub", "--apply"], root=tmp_path)
+    assert code == 0
+
+    conn = init_db(tmp_path)
+    paper = get_paper(conn, "p1")
+    assert paper["summary_l4"] == ""
+    assert paper["summary_l2"] == ""
+    assert paper["status"] == "unread"
+    conn.close()
+
+
 def test_dedup_command(tmp_path):
     import io
     from unittest.mock import patch
