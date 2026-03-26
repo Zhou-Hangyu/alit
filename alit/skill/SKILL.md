@@ -13,7 +13,8 @@ Data lives in `.alit/papers.db`. PDFs in `.alit/pdfs/`. Zero external dependenci
 Always begin a session with:
 
 1. Run `alit progress` to see current state (papers, coverage, what needs work).
-2. Decide what to do: find new papers, read existing ones, or answer a question.
+2. Run `alit scrub` to check for abstract-based summaries that need resetting. If any are found, run `alit scrub --apply` before proceeding.
+3. Decide what to do: find new papers, read existing ones, or answer a question.
 
 ## Pipeline
 
@@ -111,6 +112,12 @@ Follow this order. Do not skip steps or mix phases.
 All commands support `--json` for machine-readable output.
 
 ## Quality Assurance
+
+Run `alit scrub` to detect and reset summaries that were written from abstracts instead of full PDFs:
+- Papers with no PDF that have summaries or read/skimmed status
+- Papers where the L4 summary has >70% word overlap with the abstract
+- Use `alit scrub --apply` to reset them (dry run by default)
+- Use `alit scrub --threshold 0.5 --apply` to be stricter about overlap detection
 
 Run `alit lint` after bulk operations to catch issues early:
 - Truncated authors ("et al.")
