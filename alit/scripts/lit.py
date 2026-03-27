@@ -28,6 +28,146 @@ from alit.scripts.db import get_orphan_citations, get_paper, get_stats
 from alit.scripts.db import init_db, list_papers, update_paper
 
 
+# ── Token Budget ──────────────────────────────────────────────────────────────
+
+DEFAULT_BUDGET_THRESHOLD = 75  # percent of 5h window
+
+
+def _get_omc_usage_cache_path() -> Path | None:
+    """Locate the OMC HUD usage cache file.
+
+    Checks CLAUDE_CONFIG_DIR or ~/.claude for the OMC plugin's usage cache,
+    which is written by the oh-my-claudecode HUD statusline script.
+    """
+    import os
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR") or str(
+        Path.home() / ".claude"
+    )
+    cache_path = Path(config_dir) / "plugins" / "oh-my-claudecode" / ".usage-cache.json"
+    if cache_path.exists():
+        return cache_path
+    return None
+
+
+def _read_omc_usage() -> dict | None:
+    """Read current token usage from the OMC HUD cache.
+
+    Returns dict with keys like fiveHourPercent, weeklyPercent, etc.
+    Returns None if OMC is not installed or cache is stale/missing.
+    """
+    import time
+    cache_path = _get_omc_usage_cache_path()
+    if cache_path is None:
+        return None
+    try:
+        raw = json.loads(cache_path.read_text())
+        # Cache older than 15 min is stale
+        ts = raw.get("timestamp", 0)
+        if time.time() * 1000 - ts > 15 * 60 * 1000:
+            return None
+        data = raw.get("data")
+        if data is None:
+            return None
+        return data
+    except Exception:
+        return None
+
+
+def _read_session_fallback() -> dict | None:
+    """Read fallback session-based budget tracking from .alit/session.json."""
+    session_path = Path.cwd() / ".alit" / "session.json"
+    if not session_path.exists():
+        return None
+    try:
+        return json.loads(session_path.read_text())
+    except Exception:
+        return None
+
+
+def _write_session_fallback(data: dict) -> None:
+    """Write session-based budget tracking to .alit/session.json."""
+    session_path = Path.cwd() / ".alit" / "session.json"
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+    session_path.write_text(json.dumps(data, indent=2))
+
+
+def _check_budget(threshold: int = DEFAULT_BUDGET_THRESHOLD) -> dict:
+    """Check token budget against threshold.
+
+    Returns dict with:
+        source: 'omc' | 'session' | 'unavailable'
+        over_budget: bool
+        five_hour_pct: float | None
+        weekly_pct: float | None
+        threshold: int
+        message: str
+    """
+    import time
+
+    # Try OMC usage cache first (real token data)
+    usage = _read_omc_usage()
+    if usage is not None:
+        five_hour = usage.get("fiveHourPercent")
+        weekly = usage.get("weeklyPercent")
+        over = (five_hour is not None and five_hour >= threshold) or \
+               (weekly is not None and weekly >= threshold)
+        parts = []
+        if five_hour is not None:
+            parts.append(f"5h: {five_hour:.0f}%")
+        if weekly is not None:
+            parts.append(f"7d: {weekly:.0f}%")
+        usage_str = " | ".join(parts) if parts else "unknown"
+        if over:
+            msg = f"⚠ Over budget ({usage_str}, threshold: {threshold}%). Stop reading to preserve tokens."
+        else:
+            msg = f"✓ Within budget ({usage_str}, threshold: {threshold}%)"
+        return {
+            "source": "omc",
+            "over_budget": over,
+            "five_hour_pct": five_hour,
+            "weekly_pct": weekly,
+            "threshold": threshold,
+            "message": msg,
+        }
+
+    # Fallback: session-based time tracking
+    session = _read_session_fallback()
+    if session is not None:
+        start = session.get("start_time", 0)
+        window_min = session.get("window_minutes", 300)
+        elapsed_min = (time.time() - start) / 60
+        pct = (elapsed_min / window_min) * 100 if window_min > 0 else 0
+        over = pct >= threshold
+        if over:
+            msg = f"⚠ Over budget ({elapsed_min:.0f}/{window_min}min = {pct:.0f}%, threshold: {threshold}%). Stop reading to preserve tokens."
+        else:
+            msg = f"✓ Within budget ({elapsed_min:.0f}/{window_min}min = {pct:.0f}%, threshold: {threshold}%)"
+        return {
+            "source": "session",
+            "over_budget": over,
+            "five_hour_pct": pct,
+            "weekly_pct": None,
+            "threshold": threshold,
+            "message": msg,
+        }
+
+    return {
+        "source": "unavailable",
+        "over_budget": False,
+        "five_hour_pct": None,
+        "weekly_pct": None,
+        "threshold": threshold,
+        "message": "Budget tracking unavailable (install oh-my-claudecode or run 'alit budget start')",
+    }
+
+
+def _budget_warning() -> None:
+    """Emit a warning if over budget. Called from write-heavy commands."""
+    result = _check_budget()
+    if result["over_budget"]:
+        print(result["message"], file=sys.stderr)
+
+
 # ── Helper ─────────────────────────────────────────────────────────────────────
 
 
@@ -290,6 +430,7 @@ def _cmd_search(args: argparse.Namespace, conn) -> int:
 
 
 def _cmd_note(args: argparse.Namespace, conn) -> int:
+    _budget_warning()
     paper = get_paper(conn, args.id)
     if paper is None:
         print(f"Paper not found: {args.id}", file=sys.stderr)
@@ -302,6 +443,7 @@ def _cmd_note(args: argparse.Namespace, conn) -> int:
 
 
 def _cmd_summarize(args: argparse.Namespace, conn) -> int:
+    _budget_warning()
     paper = get_paper(conn, args.id)
     if paper is None:
         print(f"Paper not found: {args.id}", file=sys.stderr)
@@ -1257,6 +1399,82 @@ def _cmd_read(args: argparse.Namespace, conn) -> int:
     return 0
 
 
+def _cmd_budget(args: argparse.Namespace, conn) -> int:
+    """Check or manage token budget for reading sessions."""
+    import time
+
+    subcmd = getattr(args, "budget_cmd", None) or "status"
+
+    if subcmd == "start":
+        window = getattr(args, "window", 300) or 300
+        threshold = getattr(args, "threshold", DEFAULT_BUDGET_THRESHOLD) or DEFAULT_BUDGET_THRESHOLD
+        _write_session_fallback({
+            "start_time": time.time(),
+            "window_minutes": window,
+            "threshold": threshold,
+        })
+        print(f"(-o+) Session budget started: {window}min window, {threshold}% threshold")
+        # Also show OMC status if available
+        usage = _read_omc_usage()
+        if usage:
+            five = usage.get("fiveHourPercent")
+            weekly = usage.get("weeklyPercent")
+            parts = []
+            if five is not None:
+                parts.append(f"5h: {five:.0f}%")
+            if weekly is not None:
+                parts.append(f"7d: {weekly:.0f}%")
+            if parts:
+                print(f"  OMC live usage: {' | '.join(parts)}")
+        return 0
+
+    if subcmd == "stop":
+        session_path = Path.cwd() / ".alit" / "session.json"
+        if session_path.exists():
+            session_path.unlink()
+            print("(-o-) Session budget stopped")
+        else:
+            print("(-o-) No active session")
+        return 0
+
+    # Default: status / check
+    threshold = getattr(args, "threshold", DEFAULT_BUDGET_THRESHOLD) or DEFAULT_BUDGET_THRESHOLD
+    result = _check_budget(threshold)
+
+    if getattr(args, "json", False):
+        print(json.dumps(result, ensure_ascii=False))
+        return 1 if result["over_budget"] else 0
+
+    if subcmd == "check":
+        # Machine-friendly: print message, return exit code
+        print(result["message"])
+        return 1 if result["over_budget"] else 0
+
+    # status (human-friendly)
+    print("Token Budget Status\n")
+    print(f"  Source:    {result['source']}")
+    if result["five_hour_pct"] is not None:
+        pct = result["five_hour_pct"]
+        bar_w = 20
+        filled = int(bar_w * min(pct, 100) / 100)
+        bar = "█" * filled + "░" * (bar_w - filled)
+        color_label = "🔴" if pct >= 85 else "🟡" if pct >= 70 else "🟢"
+        print(f"  5h usage:  [{bar}] {pct:.0f}% {color_label}")
+    if result["weekly_pct"] is not None:
+        pct = result["weekly_pct"]
+        bar_w = 20
+        filled = int(bar_w * min(pct, 100) / 100)
+        bar = "█" * filled + "░" * (bar_w - filled)
+        color_label = "🔴" if pct >= 85 else "🟡" if pct >= 70 else "🟢"
+        print(f"  7d usage:  [{bar}] {pct:.0f}% {color_label}")
+    print(f"  Threshold: {result['threshold']}%")
+    print(f"  Verdict:   {'OVER BUDGET' if result['over_budget'] else 'OK'}")
+
+    if result["source"] == "unavailable":
+        print(f"\n  To enable: install oh-my-claudecode, or run 'alit budget start'")
+    return 1 if result["over_budget"] else 0
+
+
 def _cmd_progress(args: argparse.Namespace, conn) -> int:
     stats = get_stats(conn)
     total = stats["total"]
@@ -1683,6 +1901,17 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--threshold", type=float, default=0.7,
                    help="Word overlap threshold for flagging abstract-like summaries (default: 0.7)")
 
+    # budget
+    p = sub.add_parser("budget", help="Check token budget for reading sessions")
+    p.add_argument("budget_cmd", nargs="?", default="status",
+                   choices=["status", "check", "start", "stop"],
+                   help="Subcommand (default: status)")
+    p.add_argument("--threshold", type=int, default=DEFAULT_BUDGET_THRESHOLD,
+                   help=f"Usage percent threshold (default: {DEFAULT_BUDGET_THRESHOLD})")
+    p.add_argument("--window", type=int, default=300,
+                   help="Session window in minutes for fallback tracking (default: 300)")
+    p.add_argument("--json", action="store_true", dest="json", help="Output JSON")
+
     # install-skill
     p = sub.add_parser("install-skill", help="Install SKILL.md for agent integration")
     p.add_argument("--global", action="store_true", dest="global_install",
@@ -1724,6 +1953,7 @@ HANDLERS = {
     "lint": _cmd_lint,
     "dedup": _cmd_dedup,
     "scrub": _cmd_scrub,
+    "budget": _cmd_budget,
 }
 
 
@@ -1747,6 +1977,9 @@ def run(argv: list[str] | None = None, *, root: str | Path | None = None) -> int
         return _cmd_init(args)
     if cmd == "install-skill":
         return _cmd_install_skill(args)
+    if cmd == "budget":
+        # budget doesn't need a DB connection — runs standalone
+        return _cmd_budget(args, None)
     if cmd is None:
         parser.print_help()
         return 0

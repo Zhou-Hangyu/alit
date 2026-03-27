@@ -13,8 +13,9 @@ Data lives in `.alit/papers.db`. PDFs in `.alit/pdfs/`. Zero external dependenci
 Always begin a session with:
 
 1. Run `alit progress` to see current state (papers, coverage, what needs work).
-2. Run `alit scrub` to check for abstract-based summaries that need resetting. If any are found, run `alit scrub --apply` before proceeding.
-3. Decide what to do: find new papers, read existing ones, or answer a question.
+2. Run `alit budget` to check current token usage. If the 5h window is above 75%, warn the user and limit work to lightweight queries (search, ask) rather than bulk reading.
+3. Run `alit scrub` to check for abstract-based summaries that need resetting. If any are found, run `alit scrub --apply` before proceeding.
+4. Decide what to do: find new papers, read existing ones, or answer a question.
 
 ## Pipeline
 
@@ -34,17 +35,18 @@ Follow this order. Do not skip steps or mix phases.
 
 **PDF required.** Only read and summarize papers that have a downloaded PDF. Summaries must come from reading the full paper — never from the abstract alone.
 
-1. Run `alit recommend 5` to pick what to read next. Papers with PDFs are marked 📄.
-2. **Pick a paper that has a PDF.** If the top recommendation has no PDF, either run `alit fetch-pdf <id>` or skip to the next paper that does.
-3. Run `alit read <id>` to see the paper's details. Confirm a PDF path is shown.
-4. **Read the full PDF** using the Read tool on `.alit/pdfs/<filename>.pdf`. You MUST actually open and read the PDF file — do not skip this step.
-5. Write notes and summaries **based on PDF content only**. Your L4 summary must reflect the paper's methods, results, and contributions — not just restate the abstract. Your L2 claims must reference specific findings, theorems, or experiments from the paper body.
-6. After reading the full paper, store findings in this order:
+1. **Before each paper**, run `alit budget check`. If it returns exit code 1 (over budget), **stop reading** and tell the user: "Token budget exceeded — stopping to preserve your 5h window. Run `alit budget` for details."
+2. Run `alit recommend 5` to pick what to read next. Papers with PDFs are marked 📄.
+3. **Pick a paper that has a PDF.** If the top recommendation has no PDF, either run `alit fetch-pdf <id>` or skip to the next paper that does.
+4. Run `alit read <id>` to see the paper's details. Confirm a PDF path is shown.
+5. **Read the full PDF** using the Read tool on `.alit/pdfs/<filename>.pdf`. You MUST actually open and read the PDF file — do not skip this step.
+6. Write notes and summaries **based on PDF content only**. Your L4 summary must reflect the paper's methods, results, and contributions — not just restate the abstract. Your L2 claims must reference specific findings, theorems, or experiments from the paper body.
+7. After reading the full paper, store findings in this order:
    - `alit status <id> read`
    - `alit note <id> "key observations from the full paper..."` — mention specific sections, figures, tables, or results
    - `alit summarize <id> --l4 "one sentence summary" --model "<model-name>"`
    - `alit summarize <id> --l2 '["claim 1", "claim 2"]' --model "<model-name>"`
-7. Always pass `--model` when summarizing.
+8. Always pass `--model` when summarizing.
 
 **Self-check before summarizing:** If your summary could have been written from the abstract alone, you have not read the paper. Go back and read the PDF. A good summary includes details only found in the paper body (e.g., specific numbers, method details, ablation results, limitations discussed in later sections).
 
@@ -108,6 +110,10 @@ Follow this order. Do not skip steps or mix phases.
 | `alit lint` | Check collection for data quality issues |
 | `alit dedup` | Find and merge duplicate papers |
 | `alit scrub` | Reset abstract-based summaries (dry run; `--apply` to execute) |
+| `alit budget` | Show token budget status (reads OMC HUD or session timer) |
+| `alit budget check` | Exit 0 if within budget, exit 1 if over (for agent gating) |
+| `alit budget start` | Start fallback session timer (if OMC not installed) |
+| `alit budget stop` | Stop session timer |
 
 All commands support `--json` for machine-readable output.
 

@@ -70,6 +70,34 @@ What does the literature say about cross-modal attention mechanisms?
 
 No servers. No API keys. No vector databases.
 
+## Token budget awareness
+
+Reading 50 papers burns through a Claude Code subscription's 5-hour token window fast. alit can track your usage and stop the agent before you hit the limit.
+
+**With [oh-my-claudecode](https://github.com/anthropics/oh-my-claudecode) (recommended):**
+
+alit reads the live token usage that OMC's HUD already tracks via Anthropic's OAuth API. No extra setup — if OMC is installed and the HUD is running, `alit budget` shows your real utilization:
+
+```bash
+alit budget              # show 5h and 7d usage with visual bars
+alit budget check        # exit 0 if under 75%, exit 1 if over (for agent gating)
+```
+
+The agent skill (SKILL.md) gates on `alit budget check` before each paper read. When usage crosses 75%, the agent stops and tells you.
+
+**Without OMC (fallback timer):**
+
+If OMC is not installed, alit falls back to a simple session timer:
+
+```bash
+alit budget start                      # start a 5h session timer
+alit budget start --window 180         # custom window (3h)
+alit budget check --threshold 60       # custom threshold
+alit budget stop                       # clear the timer
+```
+
+**Without either:** alit works exactly as before — no budget tracking, no blocking. The `summarize` and `note` commands will emit a warning if you're over budget, but never block.
+
 ## Update
 
 ```bash
